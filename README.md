@@ -20,7 +20,7 @@ Inclut des fonctionnalités de **modération, sondages, statistiques, messages a
 
 Clonez ce dépôt :  
 
-https://github.com/kingoftech-v01/discord-bot.git
+git clone https://github.com/kingoftech-v01/discord-bot.git
 
 cd discord-bot
 

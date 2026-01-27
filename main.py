@@ -1,149 +1,237 @@
+"""
+Bot Discord Professionnel
+Un bot complet avec leveling, économie, modération, tickets et plus encore.
+
+Auteur: Discord Bot Pro
+Version: 2.0.0
+"""
 import discord
 from discord.ext import commands
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import datetime
-import random
-from collections import defaultdict
 import asyncio
+import os
+import logging
+from datetime import datetime
 
-# ⚠️ Ne JAMAIS mettre vos vrais tokens en clair dans le code
-# Stockez-les dans un fichier .env (via python-dotenv) ou des variables d'environnement
-TOKEN = "YOUR_DISCORD_BOT_TOKEN"
-APPLICATION_ID = "YOUR_APPLICATION_ID"
-PUBLIC_KEY = "YOUR_PUBLIC_KEY"
-PRIVATE_KEY = "YOUR_PRIVATE_KEY"
-CHANNEL_ID = 123456789012345678  # Remplacez par l’ID de votre channel
-SEND_HOUR = 9  # Envoi du message quotidien à 9h
+from config import TOKEN, PREFIX, Colors
+from utils.database import db
 
-# Liste de mots interdits
-BANNED_WORDS = [
-    "nerver mind", "badword2", "badword3", "idiot", "stupid", "dumb", "fool",
-    "moron", "shut up", "loser", "hate", "kill", "die", "suck", "bastard",
-    "asshole", "bitch", "crap", "damn", "fuck", "shit", "piss", "dick",
-    "cock", "pussy", "slut", "whore", "retard"
-]
-
-# Intents Discord requis
-intents = discord.Intents.default()
-intents.messages = True
-intents.message_content = True
-intents.members = True
-
-# Initialisation du bot
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-# Gestion des infractions pour bannissement temporaire
-user_infractions = defaultdict(int)
-KICK_DURATION_SECONDS = 7 * 24 * 60 * 60  # 1 semaine
+# Configuration du logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bot.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('discord_bot')
 
 
-# ----------------------------
-# Événements Discord
-# ----------------------------
-@bot.event
-async def on_ready():
-    print(f"✅ Bot connecté en tant que {bot.user}")
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_message, 'cron', hour=SEND_HOUR)
-    scheduler.start()
+class DiscordBot(commands.Bot):
+    """Classe principale du bot Discord."""
+
+    def __init__(self):
+        # Configuration des intents
+        intents = discord.Intents.default()
+        intents.messages = True
+        intents.message_content = True
+        intents.members = True
+        intents.reactions = True
+        intents.guilds = True
+
+        super().__init__(
+            command_prefix=self.get_prefix,
+            intents=intents,
+            help_command=None,  # On utilise notre propre commande help
+            case_insensitive=True
+        )
+
+        self.start_time = datetime.now()
+
+    async def get_prefix(self, bot, message: discord.Message):
+        """Récupère le préfixe personnalisé du serveur."""
+        if not message.guild:
+            return PREFIX
+
+        config = await db.get_guild_config(message.guild.id)
+        return config.get('prefix', PREFIX)
+
+    async def setup_hook(self):
+        """Configuration initiale du bot."""
+        # Initialiser la base de données
+        logger.info("Initialisation de la base de données...")
+        await db.init()
+
+        # Charger les cogs
+        cogs = [
+            'cogs.leveling',
+            'cogs.moderation',
+            'cogs.reaction_roles',
+            'cogs.games',
+            'cogs.utility',
+            'cogs.tickets',
+            'cogs.welcome',
+            'cogs.admin'
+        ]
+
+        for cog in cogs:
+            try:
+                await self.load_extension(cog)
+                logger.info(f"Cog chargé: {cog}")
+            except Exception as e:
+                logger.error(f"Erreur lors du chargement de {cog}: {e}")
+
+    async def on_ready(self):
+        """Événement déclenché quand le bot est prêt."""
+        logger.info(f"Bot connecté en tant que {self.user} (ID: {self.user.id})")
+        logger.info(f"Connecté à {len(self.guilds)} serveur(s)")
+        logger.info(f"Latence: {round(self.latency * 1000)}ms")
+        logger.info("-" * 50)
+
+        # Définir le statut du bot
+        activity = discord.Activity(
+            type=discord.ActivityType.watching,
+            name=f"{len(self.guilds)} serveurs | !help"
+        )
+        await self.change_presence(activity=activity)
+
+        # Synchroniser les slash commands (une seule fois en production)
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"{len(synced)} slash commands synchronisées")
+        except Exception as e:
+            logger.error(f"Erreur de synchronisation: {e}")
+
+    async def on_guild_join(self, guild: discord.Guild):
+        """Événement quand le bot rejoint un serveur."""
+        logger.info(f"Bot ajouté au serveur: {guild.name} (ID: {guild.id})")
+
+        # Créer la config par défaut
+        await db.create_guild_config(guild.id)
+
+        # Mettre à jour le statut
+        activity = discord.Activity(
+            type=discord.ActivityType.watching,
+            name=f"{len(self.guilds)} serveurs | !help"
+        )
+        await self.change_presence(activity=activity)
+
+        # Envoyer un message de bienvenue au owner
+        if guild.owner:
+            try:
+                embed = discord.Embed(
+                    title=f"Merci de m'avoir ajouté à {guild.name}!",
+                    description="Voici quelques commandes pour commencer:\n\n"
+                                "**Configuration:**\n"
+                                "`!config` - Voir la configuration\n"
+                                "`!setwelcome #channel` - Channel de bienvenue\n"
+                                "`!config logchannel #channel` - Channel de logs\n\n"
+                                "**Fonctionnalités:**\n"
+                                "`!help` - Liste des commandes\n"
+                                "`!ticket setup` - Système de tickets\n"
+                                "`!reactionrole create` - Menus de rôles\n\n"
+                                "Besoin d'aide? Rejoignez notre serveur support!",
+                    color=Colors.PRIMARY
+                )
+                await guild.owner.send(embed=embed)
+            except discord.Forbidden:
+                pass
+
+    async def on_guild_remove(self, guild: discord.Guild):
+        """Événement quand le bot quitte un serveur."""
+        logger.info(f"Bot retiré du serveur: {guild.name} (ID: {guild.id})")
+
+        # Mettre à jour le statut
+        activity = discord.Activity(
+            type=discord.ActivityType.watching,
+            name=f"{len(self.guilds)} serveurs | !help"
+        )
+        await self.change_presence(activity=activity)
+
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
+        """Gestion globale des erreurs de commandes."""
+        if isinstance(error, commands.CommandNotFound):
+            return  # Ignorer les commandes inexistantes
+
+        if isinstance(error, commands.MissingPermissions):
+            embed = discord.Embed(
+                title="Permission refusée",
+                description="Vous n'avez pas les permissions nécessaires pour cette commande.",
+                color=Colors.ERROR
+            )
+            await ctx.send(embed=embed, delete_after=10)
+            return
+
+        if isinstance(error, commands.BotMissingPermissions):
+            embed = discord.Embed(
+                title="Permission manquante",
+                description="Je n'ai pas les permissions nécessaires pour effectuer cette action.",
+                color=Colors.ERROR
+            )
+            await ctx.send(embed=embed, delete_after=10)
+            return
+
+        if isinstance(error, commands.MissingRequiredArgument):
+            embed = discord.Embed(
+                title="Argument manquant",
+                description=f"Utilisation: `{ctx.prefix}{ctx.command.name} {ctx.command.signature}`",
+                color=Colors.WARNING
+            )
+            await ctx.send(embed=embed, delete_after=10)
+            return
+
+        if isinstance(error, commands.BadArgument):
+            embed = discord.Embed(
+                title="Argument invalide",
+                description=str(error),
+                color=Colors.WARNING
+            )
+            await ctx.send(embed=embed, delete_after=10)
+            return
+
+        if isinstance(error, commands.CommandOnCooldown):
+            embed = discord.Embed(
+                title="Cooldown",
+                description=f"Réessayez dans {error.retry_after:.1f} secondes.",
+                color=Colors.WARNING
+            )
+            await ctx.send(embed=embed, delete_after=5)
+            return
+
+        if isinstance(error, commands.NotOwner):
+            embed = discord.Embed(
+                title="Accès refusé",
+                description="Cette commande est réservée au propriétaire du bot.",
+                color=Colors.ERROR
+            )
+            await ctx.send(embed=embed, delete_after=10)
+            return
+
+        # Erreur non gérée
+        logger.error(f"Erreur non gérée: {error}", exc_info=error)
+        embed = discord.Embed(
+            title="Erreur",
+            description="Une erreur inattendue s'est produite.",
+            color=Colors.ERROR
+        )
+        await ctx.send(embed=embed, delete_after=10)
 
 
-async def send_daily_message():
-    """Envoie un message quotidien dans le channel défini."""
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel:
-        await channel.send("☀️ Good morning! Voici votre message quotidien.")
+async def main():
+    """Point d'entrée principal."""
+    # Créer le dossier data si nécessaire
+    os.makedirs('data', exist_ok=True)
+
+    bot = DiscordBot()
+
+    async with bot:
+        await bot.start(TOKEN)
 
 
-@bot.event
-async def on_member_join(member):
-    """Message de bienvenue."""
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel:
-        await channel.send(f"Bienvenue {member.mention} sur le serveur ! 🎉")
-
-
-@bot.event
-async def on_member_remove(member):
-    """Message de départ."""
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel:
-        await channel.send(f"{member.mention} a quitté le serveur. 👋")
-
-
-# ----------------------------
-# Commandes Discord
-# ----------------------------
-@bot.command(name="sondage")
-async def sondage(ctx, question: str, *options):
-    """Crée un sondage à choix multiple."""
-    if len(options) < 2:
-        await ctx.send("⚠️ Veuillez fournir au moins deux options.")
-        return
-    if len(options) > 10:
-        await ctx.send("⚠️ Maximum 10 options autorisées.")
-        return
-
-    emojis = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-    description = "\n".join(f"{emojis[i]} {opt}" for i, opt in enumerate(options))
-
-    embed = discord.Embed(
-        title="📊 Sondage (choix multiple)",
-        description=f"**{question}**\n\n{description}",
-        color=discord.Color.blue()
-    )
-    embed.set_footer(text=f"Sondage créé par {ctx.author.display_name}")
-
-    poll_message = await ctx.send(embed=embed)
-    for i in range(len(options)):
-        await poll_message.add_reaction(emojis[i])
-
-
-@bot.command(name="motdepasse")
-async def generate_password(ctx):
-    """Génère un mot de passe aléatoire de 12 caractères."""
-    characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()"
-    password = ''.join(random.choice(characters) for _ in range(12))
-    await ctx.send(f"🔐 Votre mot de passe généré : `{password}`")
-
-
-@bot.command(name="ban")
-@commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason=None):
-    """Bannir un utilisateur."""
-    await member.ban(reason=reason)
-    await ctx.send(f"⛔ {member.mention} a été banni. Raison : {reason or 'Aucune'}")
-
-
-@bot.command(name="kick")
-@commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, reason=None):
-    """Expulser un utilisateur."""
-    await member.kick(reason=reason)
-    await ctx.send(f"🚪 {member.mention} a été expulsé. Raison : {reason or 'Aucune'}")
-
-
-@bot.command(name="warn")
-@commands.has_permissions(manage_messages=True)
-async def warn(ctx, member: discord.Member, *, reason=None):
-    """Avertir un utilisateur."""
-    await ctx.send(f"⚠️ {member.mention}, vous êtes averti. Raison : {reason or 'Aucune'}")
-
-
-@bot.command(name="stats")
-async def stats(ctx):
-    """Affiche les stats du serveur."""
-    guild = ctx.guild
-    embed = discord.Embed(title=f"📊 Stats de {guild.name}", color=discord.Color.blue())
-    embed.add_field(name="👥 Membres", value=guild.member_count, inline=True)
-    embed.add_field(name="💬 Salons", value=len(guild.channels), inline=True)
-    embed.add_field(name="🎭 Rôles", value=len(guild.roles), inline=True)
-    embed.set_thumbnail(url=guild.icon.url if guild.icon else "")
-    await ctx.send(embed=embed)
-
-
-# ----------------------------
-# Lancement du bot
-# ----------------------------
-bot.run(TOKEN)
-
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot arrêté par l'utilisateur")
+    except Exception as e:
+        logger.error(f"Erreur fatale: {e}")

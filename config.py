@@ -16,6 +16,11 @@ PREFIX = os.getenv("BOT_PREFIX", "!")
 DEFAULT_CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 SEND_HOUR = int(os.getenv("SEND_HOUR", "9"))
 
+# === CONFIGURATION AI ===
+AI_ENABLED = os.getenv("AI_ENABLED", "true").lower() == "true"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
+AI_MODEL = os.getenv("AI_MODEL", "gpt-3.5-turbo")
+
 # === CONFIGURATION XP/LEVELING ===
 XP_PER_MESSAGE = int(os.getenv("XP_PER_MESSAGE", "15"))
 XP_COOLDOWN = int(os.getenv("XP_COOLDOWN", "60"))  # secondes
@@ -34,12 +39,76 @@ MUTE_DURATION = int(os.getenv("MUTE_DURATION", "3600"))  # 1 heure en secondes
 SPAM_THRESHOLD = int(os.getenv("SPAM_THRESHOLD", "5"))  # Messages en 5 secondes
 SPAM_INTERVAL = int(os.getenv("SPAM_INTERVAL", "5"))  # Intervalle en secondes
 
-# === MOTS INTERDITS ===
+# === MOTS INTERDITS (FR + EN) ===
+# Liste étendue de mots interdits français et anglais
 BANNED_WORDS = [
-    "badword1", "badword2", "badword3", "idiot", "stupid", "dumb", "fool",
-    "moron", "shut up", "loser", "hate", "kill", "die", "suck", "bastard",
-    "asshole", "bitch", "crap", "damn", "fuck", "shit", "piss", "dick",
-    "cock", "pussy", "slut", "whore", "retard"
+    # Anglais - Insultes courantes
+    "fuck", "fucking", "fucker", "fucked", "fck", "f*ck", "f**k",
+    "shit", "bullshit", "shitty", "sh*t", "sh1t",
+    "bitch", "b*tch", "b1tch",
+    "asshole", "a**hole", "assh0le",
+    "bastard", "b@stard",
+    "dick", "d*ck", "d1ck",
+    "cock", "c*ck", "c0ck",
+    "pussy", "p*ssy",
+    "slut", "sl*t", "whore", "wh*re",
+    "retard", "r3tard", "retarded",
+    "faggot", "f@ggot", "fag",
+    "nigger", "n*gger", "n1gger", "nigga",
+    "cunt", "c*nt",
+    "damn", "dammit", "goddamn",
+    "idiot", "stupid", "dumb", "moron", "imbecile",
+    "loser", "sucker", "jerk", "douchebag",
+    "kill yourself", "kys", "go die",
+
+    # Français - Insultes courantes
+    "merde", "m*rde", "mrd",
+    "putain", "put1", "put@in", "ptn",
+    "salope", "sal0pe", "s@lope",
+    "connard", "conn@rd", "conard",
+    "connasse", "conn@sse",
+    "enculé", "encule", "nculé", "enc*lé",
+    "nique", "niquer", "niqué", "ntm", "nique ta mère", "nique ta mere",
+    "fdp", "fils de pute", "fils de p*te",
+    "pd", "pédé", "pede", "pédale",
+    "tapette", "tapet",
+    "batard", "bâtard", "b@tard",
+    "con", "c0n",
+    "conne", "c0nne",
+    "bite", "b1te",
+    "couilles", "couille",
+    "chier", "fait chier", "fais chier",
+    "gueule", "ta gueule", "ferme ta gueule", "tg",
+    "crétin", "cretin", "crét1n",
+    "abruti", "abrut1",
+    "débile", "debile", "déb1le",
+    "imbécile", "imbecile",
+    "ordure", "0rdure",
+    "pouffiasse", "poufiasse",
+    "pétasse", "petasse",
+    "salaud", "sal@ud",
+    "enfoiré", "enfoire", "enf0iré",
+    "bouffon", "bouf0n",
+    "gogol", "gog0l",
+    "attardé", "attarde",
+    "mongol", "mong0l",
+    "trisomique",
+    "nègre", "negre",
+    "bougnoule", "bougn0ule",
+    "arabe de merde",
+    "sale arabe", "sale noir", "sale blanc",
+    "racaille",
+    "casse toi", "casse-toi", "vas te faire",
+    "va te faire foutre", "vtff",
+    "je te baise", "je te nique",
+
+    # Variantes avec espaces/caractères
+    "f u c k", "s h i t", "b i t c h",
+    "n i g g e r", "f a g g o t",
+
+    # Termes haineux
+    "nazi", "n@zi", "hitler",
+    "terroriste", "terr0riste",
 ]
 
 # === CONFIGURATION TRIVIA ===

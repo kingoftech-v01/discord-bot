@@ -71,7 +71,9 @@ class DiscordBot(commands.Bot):
             'cogs.utility',
             'cogs.tickets',
             'cogs.welcome',
-            'cogs.admin'
+            'cogs.admin',
+            'cogs.scheduler',
+            'cogs.ai'
         ]
 
         for cog in cogs:

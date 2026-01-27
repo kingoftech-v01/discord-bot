@@ -66,6 +66,7 @@ class DiscordBot(commands.Bot):
         cogs = [
             'cogs.leveling',
             'cogs.moderation',
+            'cogs.profanity_filter',
             'cogs.reaction_roles',
             'cogs.games',
             'cogs.utility',

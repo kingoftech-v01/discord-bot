@@ -140,7 +140,72 @@ class Database:
                 )
             """)
 
+            # =========================================
+            # TABLES POUR GESTION DES MOTS INTERDITS
+            # =========================================
+
+            # Table des mots interdits (multi-langue, par serveur ou global)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS banned_words (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    word TEXT NOT NULL,
+                    language TEXT DEFAULT 'all',
+                    guild_id INTEGER DEFAULT 0,
+                    severity INTEGER DEFAULT 1,
+                    added_by INTEGER,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(word, guild_id)
+                )
+            """)
+
+            # Table des infractions pour mots interdits
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS profanity_infractions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    guild_id INTEGER NOT NULL,
+                    word_used TEXT NOT NULL,
+                    message_content TEXT,
+                    action_taken TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Table des sanctions progressives par utilisateur
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS user_profanity_stats (
+                    user_id INTEGER NOT NULL,
+                    guild_id INTEGER NOT NULL,
+                    total_infractions INTEGER DEFAULT 0,
+                    warnings_count INTEGER DEFAULT 0,
+                    mutes_count INTEGER DEFAULT 0,
+                    kicks_count INTEGER DEFAULT 0,
+                    is_banned INTEGER DEFAULT 0,
+                    last_infraction TEXT,
+                    PRIMARY KEY (user_id, guild_id)
+                )
+            """)
+
+            # Table de configuration des sanctions
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS profanity_config (
+                    guild_id INTEGER PRIMARY KEY,
+                    enabled INTEGER DEFAULT 1,
+                    warn_threshold INTEGER DEFAULT 3,
+                    mute_threshold INTEGER DEFAULT 5,
+                    kick_threshold INTEGER DEFAULT 8,
+                    ban_threshold INTEGER DEFAULT 10,
+                    mute_duration INTEGER DEFAULT 3600,
+                    delete_message INTEGER DEFAULT 1,
+                    log_infractions INTEGER DEFAULT 1,
+                    dm_user INTEGER DEFAULT 1
+                )
+            """)
+
             await db.commit()
+
+        # Insérer les mots interdits par défaut
+        await self._init_default_banned_words()
 
     # ===============================
     # GESTION UTILISATEURS / XP
@@ -540,6 +605,320 @@ class Database:
                 (guild_id, level)
             )
             await db.commit()
+
+
+    # ===============================
+    # GESTION MOTS INTERDITS
+    # ===============================
+
+    async def _init_default_banned_words(self):
+        """Initialise les mots interdits par défaut dans la base."""
+        default_words = [
+            # Anglais
+            ("fuck", "en", 3), ("fucking", "en", 3), ("fucker", "en", 3),
+            ("shit", "en", 2), ("bullshit", "en", 2), ("shitty", "en", 2),
+            ("bitch", "en", 2), ("asshole", "en", 3), ("bastard", "en", 2),
+            ("dick", "en", 2), ("cock", "en", 2), ("pussy", "en", 2),
+            ("slut", "en", 3), ("whore", "en", 3), ("cunt", "en", 3),
+            ("retard", "en", 3), ("retarded", "en", 3),
+            ("faggot", "en", 4), ("fag", "en", 4),
+            ("nigger", "en", 5), ("nigga", "en", 4),
+            ("kys", "en", 5), ("kill yourself", "en", 5),
+
+            # Français
+            ("merde", "fr", 1), ("putain", "fr", 2), ("ptn", "fr", 2),
+            ("salope", "fr", 3), ("connard", "fr", 2), ("connasse", "fr", 2),
+            ("enculé", "fr", 3), ("encule", "fr", 3), ("nique", "fr", 3),
+            ("niquer", "fr", 3), ("ntm", "fr", 4), ("nique ta mère", "fr", 4),
+            ("fdp", "fr", 4), ("fils de pute", "fr", 4),
+            ("pd", "fr", 3), ("pédé", "fr", 3), ("pédale", "fr", 3),
+            ("tapette", "fr", 3), ("batard", "fr", 2), ("bâtard", "fr", 2),
+            ("bite", "fr", 2), ("couilles", "fr", 1),
+            ("ta gueule", "fr", 2), ("tg", "fr", 2), ("ferme ta gueule", "fr", 2),
+            ("crétin", "fr", 1), ("abruti", "fr", 1), ("débile", "fr", 2),
+            ("imbécile", "fr", 1), ("ordure", "fr", 2),
+            ("pétasse", "fr", 3), ("pouffiasse", "fr", 3),
+            ("salaud", "fr", 2), ("enfoiré", "fr", 2),
+            ("bouffon", "fr", 1), ("gogol", "fr", 2),
+            ("attardé", "fr", 3), ("mongol", "fr", 4), ("trisomique", "fr", 4),
+            ("nègre", "fr", 5), ("bougnoule", "fr", 5),
+            ("va te faire foutre", "fr", 3), ("vtff", "fr", 3),
+
+            # Espagnol
+            ("puta", "es", 3), ("mierda", "es", 2), ("coño", "es", 2),
+            ("joder", "es", 2), ("cabron", "es", 2), ("cabrón", "es", 2),
+            ("pendejo", "es", 2), ("maricón", "es", 4), ("maricon", "es", 4),
+            ("hijo de puta", "es", 4), ("polla", "es", 2), ("gilipollas", "es", 2),
+
+            # Allemand
+            ("scheiße", "de", 2), ("scheisse", "de", 2), ("arschloch", "de", 3),
+            ("hurensohn", "de", 4), ("fotze", "de", 3), ("wichser", "de", 3),
+            ("schwuchtel", "de", 4), ("missgeburt", "de", 4),
+
+            # Italien
+            ("cazzo", "it", 2), ("merda", "it", 2), ("stronzo", "it", 2),
+            ("puttana", "it", 3), ("vaffanculo", "it", 3), ("frocio", "it", 4),
+
+            # Portugais
+            ("porra", "pt", 2), ("caralho", "pt", 2), ("filho da puta", "pt", 4),
+            ("viado", "pt", 4), ("puta", "pt", 3), ("merda", "pt", 2),
+
+            # Arabe translittéré
+            ("kelb", "ar", 2), ("kess", "ar", 3), ("sharmouta", "ar", 4),
+            ("ibn el sharmouta", "ar", 5), ("zebi", "ar", 3), ("nik", "ar", 3),
+        ]
+
+        async with aiosqlite.connect(self.db_path) as db:
+            for word, lang, severity in default_words:
+                await db.execute("""
+                    INSERT OR IGNORE INTO banned_words (word, language, guild_id, severity)
+                    VALUES (?, ?, 0, ?)
+                """, (word.lower(), lang, severity))
+            await db.commit()
+
+    async def add_banned_word(self, word: str, language: str = "all", guild_id: int = 0,
+                             severity: int = 1, added_by: int = None) -> bool:
+        """Ajoute un mot interdit."""
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute("""
+                    INSERT INTO banned_words (word, language, guild_id, severity, added_by)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (word.lower(), language, guild_id, severity, added_by))
+                await db.commit()
+                return True
+            except Exception:
+                return False
+
+    async def remove_banned_word(self, word: str, guild_id: int = 0) -> bool:
+        """Supprime un mot interdit."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM banned_words WHERE word = ? AND guild_id = ?",
+                (word.lower(), guild_id)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def get_banned_words(self, guild_id: int = 0, language: str = None) -> List[Dict]:
+        """Récupère tous les mots interdits (globaux + serveur)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if language:
+                async with db.execute("""
+                    SELECT * FROM banned_words
+                    WHERE (guild_id = 0 OR guild_id = ?)
+                    AND (language = ? OR language = 'all')
+                    ORDER BY severity DESC
+                """, (guild_id, language)) as cursor:
+                    rows = await cursor.fetchall()
+            else:
+                async with db.execute("""
+                    SELECT * FROM banned_words
+                    WHERE guild_id = 0 OR guild_id = ?
+                    ORDER BY severity DESC
+                """, (guild_id,)) as cursor:
+                    rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def get_banned_words_list(self, guild_id: int = 0) -> List[str]:
+        """Récupère la liste simple des mots interdits."""
+        words = await self.get_banned_words(guild_id)
+        return [w['word'] for w in words]
+
+    async def check_message_for_profanity(self, content: str, guild_id: int = 0) -> Optional[Dict]:
+        """Vérifie si un message contient des mots interdits."""
+        content_lower = content.lower()
+        words = await self.get_banned_words(guild_id)
+
+        for word_data in words:
+            word = word_data['word']
+            # Vérification avec frontières de mots pour éviter les faux positifs
+            import re
+            pattern = r'\b' + re.escape(word) + r'\b'
+            if re.search(pattern, content_lower):
+                return word_data
+
+            # Vérification aussi sans frontières pour les variantes
+            if word in content_lower:
+                return word_data
+
+        return None
+
+    # ===============================
+    # GESTION INFRACTIONS PROFANITY
+    # ===============================
+
+    async def add_profanity_infraction(self, user_id: int, guild_id: int,
+                                       word_used: str, message_content: str,
+                                       action_taken: str) -> Dict:
+        """Ajoute une infraction et retourne les stats mises à jour."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Ajouter l'infraction
+            await db.execute("""
+                INSERT INTO profanity_infractions
+                (user_id, guild_id, word_used, message_content, action_taken)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, guild_id, word_used, message_content[:500], action_taken))
+
+            # Mettre à jour les stats
+            await db.execute("""
+                INSERT INTO user_profanity_stats (user_id, guild_id, total_infractions, last_infraction)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(user_id, guild_id) DO UPDATE SET
+                    total_infractions = total_infractions + 1,
+                    last_infraction = ?
+            """, (user_id, guild_id, datetime.now().isoformat(), datetime.now().isoformat()))
+
+            # Incrémenter le compteur spécifique selon l'action
+            if action_taken == "warn":
+                await db.execute("""
+                    UPDATE user_profanity_stats
+                    SET warnings_count = warnings_count + 1
+                    WHERE user_id = ? AND guild_id = ?
+                """, (user_id, guild_id))
+            elif action_taken == "mute":
+                await db.execute("""
+                    UPDATE user_profanity_stats
+                    SET mutes_count = mutes_count + 1
+                    WHERE user_id = ? AND guild_id = ?
+                """, (user_id, guild_id))
+            elif action_taken == "kick":
+                await db.execute("""
+                    UPDATE user_profanity_stats
+                    SET kicks_count = kicks_count + 1
+                    WHERE user_id = ? AND guild_id = ?
+                """, (user_id, guild_id))
+            elif action_taken == "ban":
+                await db.execute("""
+                    UPDATE user_profanity_stats
+                    SET is_banned = 1
+                    WHERE user_id = ? AND guild_id = ?
+                """, (user_id, guild_id))
+
+            await db.commit()
+
+        return await self.get_user_profanity_stats(user_id, guild_id)
+
+    async def get_user_profanity_stats(self, user_id: int, guild_id: int) -> Dict:
+        """Récupère les statistiques d'infractions d'un utilisateur."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT * FROM user_profanity_stats
+                WHERE user_id = ? AND guild_id = ?
+            """, (user_id, guild_id)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+                return {
+                    'user_id': user_id,
+                    'guild_id': guild_id,
+                    'total_infractions': 0,
+                    'warnings_count': 0,
+                    'mutes_count': 0,
+                    'kicks_count': 0,
+                    'is_banned': 0,
+                    'last_infraction': None
+                }
+
+    async def get_user_profanity_history(self, user_id: int, guild_id: int, limit: int = 10) -> List[Dict]:
+        """Récupère l'historique des infractions d'un utilisateur."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT * FROM profanity_infractions
+                WHERE user_id = ? AND guild_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (user_id, guild_id, limit)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def reset_user_profanity_stats(self, user_id: int, guild_id: int):
+        """Réinitialise les stats de profanity d'un utilisateur."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                UPDATE user_profanity_stats
+                SET total_infractions = 0, warnings_count = 0,
+                    mutes_count = 0, kicks_count = 0, is_banned = 0
+                WHERE user_id = ? AND guild_id = ?
+            """, (user_id, guild_id))
+            await db.commit()
+
+    # ===============================
+    # CONFIGURATION SANCTIONS
+    # ===============================
+
+    async def get_profanity_config(self, guild_id: int) -> Dict:
+        """Récupère la configuration des sanctions."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM profanity_config WHERE guild_id = ?",
+                (guild_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+
+            # Créer config par défaut
+            await db.execute(
+                "INSERT OR IGNORE INTO profanity_config (guild_id) VALUES (?)",
+                (guild_id,)
+            )
+            await db.commit()
+
+        return await self.get_profanity_config(guild_id)
+
+    async def update_profanity_config(self, guild_id: int, **kwargs):
+        """Met à jour la configuration des sanctions."""
+        if not kwargs:
+            return
+
+        # S'assurer que la config existe
+        await self.get_profanity_config(guild_id)
+
+        set_clause = ", ".join(f"{key} = ?" for key in kwargs.keys())
+        values = list(kwargs.values()) + [guild_id]
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                f"UPDATE profanity_config SET {set_clause} WHERE guild_id = ?",
+                values
+            )
+            await db.commit()
+
+    async def determine_punishment(self, user_id: int, guild_id: int) -> str:
+        """Détermine la sanction appropriée basée sur l'historique."""
+        stats = await self.get_user_profanity_stats(user_id, guild_id)
+        config = await self.get_profanity_config(guild_id)
+
+        infractions = stats['total_infractions']
+
+        if infractions >= config['ban_threshold']:
+            return "ban"
+        elif infractions >= config['kick_threshold']:
+            return "kick"
+        elif infractions >= config['mute_threshold']:
+            return "mute"
+        elif infractions >= config['warn_threshold']:
+            return "warn"
+        else:
+            return "warn"  # Toujours au moins avertir
+
+    async def get_profanity_leaderboard(self, guild_id: int, limit: int = 10) -> List[Dict]:
+        """Récupère le classement des utilisateurs avec le plus d'infractions."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT * FROM user_profanity_stats
+                WHERE guild_id = ?
+                ORDER BY total_infractions DESC
+                LIMIT ?
+            """, (guild_id, limit)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
 
 
 # Instance globale

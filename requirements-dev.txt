@@ -1,0 +1,23 @@
+# Development and Testing Dependencies
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+pytest-django>=4.7.0
+
+# Code Quality
+flake8>=6.1.0
+black>=23.12.0
+isort>=5.13.0
+mypy>=1.8.0
+
+# Pre-commit hooks
+pre-commit>=3.6.0
+
+# Mocking
+aioresponses>=0.7.6
+responses>=0.24.0
+factory-boy>=3.3.0
+faker>=22.0.0

@@ -1,0 +1,70 @@
+# Docker Compose - Development Configuration
+# Usage: docker-compose -f docker-compose.dev.yml up --build
+
+version: '3.8'
+
+services:
+  # Discord Bot
+  bot:
+    build:
+      context: .
+      dockerfile: docker/bot/Dockerfile
+    container_name: discord-bot-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DEBUG=True
+      - LOG_LEVEL=DEBUG
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    networks:
+      - bot-network
+
+  # Django Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/dashboard/Dockerfile
+    container_name: discord-dashboard-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DEBUG=True
+      - DATABASE_PATH=/app/data/bot.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./dashboard:/app
+      - ./data:/app/data
+    depends_on:
+      - redis
+    networks:
+      - bot-network
+    command: python manage.py runserver 0.0.0.0:8000
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: discord-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - bot-network
+    command: redis-server --appendonly yes
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  redis-data:

@@ -1,0 +1,226 @@
+{% extends 'core/server_base.html' %}
+
+{% block title %}Modération - {{ guild.name }}{% endblock %}
+
+{% block server_content %}
+<h2 class="mb-4">
+    <i class="bi bi-shield-check me-2"></i>Modération
+</h2>
+
+<div class="row g-4">
+    <!-- Configuration -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-sliders me-2"></i>Configuration des Sanctions</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_config">
+
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="enabled" id="filterEnabled"
+                               {% if profanity_config.enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="filterEnabled">
+                            Activer le filtre de mots interdits
+                        </label>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Seuil Avertissement</label>
+                            <input type="number" class="form-control" name="warn_threshold"
+                                   value="{{ profanity_config.warn_threshold }}" min="1">
+                            <small class="text-muted">Infractions avant warn</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Seuil Mute</label>
+                            <input type="number" class="form-control" name="mute_threshold"
+                                   value="{{ profanity_config.mute_threshold }}" min="1">
+                            <small class="text-muted">Infractions avant mute</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Seuil Kick</label>
+                            <input type="number" class="form-control" name="kick_threshold"
+                                   value="{{ profanity_config.kick_threshold }}" min="1">
+                            <small class="text-muted">Infractions avant kick</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Seuil Ban</label>
+                            <input type="number" class="form-control" name="ban_threshold"
+                                   value="{{ profanity_config.ban_threshold }}" min="1">
+                            <small class="text-muted">Infractions avant ban</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Durée Mute (minutes)</label>
+                            <input type="number" class="form-control" name="mute_duration"
+                                   value="{{ profanity_config.mute_duration|divisibleby:60 }}" min="1">
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="delete_message" id="deleteMessage"
+                               {% if profanity_config.delete_message %}checked{% endif %}>
+                        <label class="form-check-label" for="deleteMessage">
+                            Supprimer les messages contenant des mots interdits
+                        </label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="dm_user" id="dmUser"
+                               {% if profanity_config.dm_user %}checked{% endif %}>
+                        <label class="form-check-label" for="dmUser">
+                            Envoyer un DM à l'utilisateur lors d'une infraction
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-discord">
+                        <i class="bi bi-check-lg me-2"></i>Sauvegarder
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Word -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Ajouter un Mot Interdit</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_word">
+
+                    <div class="mb-3">
+                        <label class="form-label">Mot</label>
+                        <input type="text" class="form-control" name="word" required
+                               placeholder="Entrez le mot à interdire">
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Langue</label>
+                            <select class="form-select" name="language">
+                                <option value="all">Toutes</option>
+                                <option value="fr">Français</option>
+                                <option value="en">Anglais</option>
+                                <option value="es">Espagnol</option>
+                                <option value="de">Allemand</option>
+                                <option value="it">Italien</option>
+                                <option value="pt">Portugais</option>
+                                <option value="ar">Arabe</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Sévérité</label>
+                            <select class="form-select" name="severity">
+                                <option value="1">1 - Faible</option>
+                                <option value="2" selected>2 - Moyen</option>
+                                <option value="3">3 - Élevé</option>
+                                <option value="4">4 - Très élevé</option>
+                                <option value="5">5 - Critique</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-discord">
+                        <i class="bi bi-plus-lg me-2"></i>Ajouter
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Server-specific Words -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-list-ul me-2"></i>Mots Interdits du Serveur
+                    <span class="badge bg-secondary ms-2">{{ server_words.count }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if server_words %}
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Mot</th>
+                                    <th>Langue</th>
+                                    <th>Sévérité</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for word in server_words %}
+                                    <tr>
+                                        <td><code>{{ word.word }}</code></td>
+                                        <td>{{ word.language }}</td>
+                                        <td>
+                                            <span class="badge badge-severity-{{ word.severity }}">
+                                                {{ word.severity }}/5
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <form method="post" class="d-inline">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="delete_word">
+                                                <input type="hidden" name="word_id" value="{{ word.id }}">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center mb-0">
+                        Aucun mot interdit personnalisé. Les mots globaux sont toujours actifs.
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Global Words Info -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-globe me-2"></i>Mots Interdits Globaux
+                    <span class="badge bg-secondary ms-2">{{ banned_words.count }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Ces mots sont interdits sur tous les serveurs et ne peuvent pas être supprimés.
+                </p>
+                <div class="d-flex flex-wrap gap-1">
+                    {% for word in banned_words|slice:":50" %}
+                        {% if word.guild_id == 0 %}
+                            <span class="badge badge-severity-{{ word.severity }}" title="Sévérité: {{ word.severity }}">
+                                {{ word.word }}
+                            </span>
+                        {% endif %}
+                    {% endfor %}
+                    {% if banned_words.count > 50 %}
+                        <span class="badge bg-secondary">+{{ banned_words.count|add:"-50" }} autres</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

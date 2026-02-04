@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <nav class="col-md-3 col-lg-2 sidebar d-md-block collapse">
+            <div class="position-sticky pt-3">
+                <!-- Server Info -->
+                <div class="text-center mb-4 px-3">
+                    {% if guild.icon %}
+                        <img src="https://cdn.discordapp.com/icons/{{ guild.id }}/{{ guild.icon }}.png"
+                             class="guild-icon mb-2" alt="{{ guild.name }}">
+                    {% else %}
+                        <div class="guild-icon mb-2 d-flex align-items-center justify-content-center mx-auto"
+                             style="background-color: var(--discord-blurple); font-size: 1.5rem;">
+                            {{ guild.name|slice:":2"|upper }}
+                        </div>
+                    {% endif %}
+                    <h6 class="text-white mb-0">{{ guild.name }}</h6>
+                </div>
+
+                <hr class="mx-3" style="border-color: rgba(255,255,255,0.1);">
+
+                <!-- Navigation -->
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'server_dashboard' %}active{% endif %}"
+                           href="{% url 'server_dashboard' guild.id %}">
+                            <i class="bi bi-speedometer2 me-2"></i>Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'server_settings' %}active{% endif %}"
+                           href="{% url 'server_settings' guild.id %}">
+                            <i class="bi bi-gear me-2"></i>Paramètres
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'moderation_settings' %}active{% endif %}"
+                           href="{% url 'moderation_settings' guild.id %}">
+                            <i class="bi bi-shield-check me-2"></i>Modération
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'leveling_settings' %}active{% endif %}"
+                           href="{% url 'leveling_settings' guild.id %}">
+                            <i class="bi bi-graph-up me-2"></i>Leveling
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'users_list' %}active{% endif %}"
+                           href="{% url 'users_list' guild.id %}">
+                            <i class="bi bi-people me-2"></i>Utilisateurs
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'infractions_list' %}active{% endif %}"
+                           href="{% url 'infractions_list' guild.id %}">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Infractions
+                        </a>
+                    </li>
+                </ul>
+
+                <hr class="mx-3" style="border-color: rgba(255,255,255,0.1);">
+
+                <!-- Other Servers -->
+                <h6 class="sidebar-heading px-3 text-muted small">
+                    Autres serveurs
+                </h6>
+                <ul class="nav flex-column mb-2">
+                    {% for g in guilds %}
+                        {% if g.id != guild.id and g.bot_present %}
+                            <li class="nav-item">
+                                <a class="nav-link py-1" href="{% url 'server_dashboard' g.id %}">
+                                    <i class="bi bi-arrow-right-short me-1"></i>
+                                    {{ g.name|truncatechars:20 }}
+                                </a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+
+                <hr class="mx-3" style="border-color: rgba(255,255,255,0.1);">
+
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard' %}">
+                            <i class="bi bi-arrow-left me-2"></i>Retour aux serveurs
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            {% block server_content %}{% endblock %}
+        </main>
+    </div>
+</div>
+{% endblock %}

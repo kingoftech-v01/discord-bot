@@ -1,0 +1,91 @@
+{% extends 'core/server_base.html' %}
+
+{% block title %}Paramètres - {{ guild.name }}{% endblock %}
+
+{% block server_content %}
+<h2 class="mb-4">
+    <i class="bi bi-gear me-2"></i>Paramètres Généraux
+</h2>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-sliders me-2"></i>Configuration du Bot</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label class="form-label">Préfixe des commandes</label>
+                        <input type="text" class="form-control" name="prefix"
+                               value="{{ config.prefix }}" maxlength="10" style="width: 100px;">
+                        <small class="text-muted">Le préfixe pour les commandes du bot (ex: !, ?, .)</small>
+                    </div>
+
+                    <hr>
+
+                    <h6>Modules</h6>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="auto_mod_enabled"
+                               id="autoModEnabled" {% if config.auto_mod_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="autoModEnabled">
+                            <i class="bi bi-shield-check me-2"></i>Auto-Modération
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="leveling_enabled"
+                               id="levelingEnabled" {% if config.leveling_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="levelingEnabled">
+                            <i class="bi bi-graph-up me-2"></i>Système de Leveling
+                        </label>
+                    </div>
+
+                    <hr>
+
+                    <h6>Messages</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Message de bienvenue</label>
+                        <textarea class="form-control" name="welcome_message" rows="2">{{ config.welcome_message }}</textarea>
+                        <small class="text-muted">Variables: {user}, {server}, {member_count}</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Message de départ</label>
+                        <textarea class="form-control" name="goodbye_message" rows="2">{{ config.goodbye_message }}</textarea>
+                        <small class="text-muted">Variables: {user}, {server}</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Message de level up</label>
+                        <textarea class="form-control" name="level_up_message" rows="2">{{ config.level_up_message }}</textarea>
+                        <small class="text-muted">Variables: {user}, {level}</small>
+                    </div>
+
+                    <button type="submit" class="btn btn-discord">
+                        <i class="bi bi-check-lg me-2"></i>Sauvegarder
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Informations</h5>
+            </div>
+            <div class="card-body">
+                <p class="mb-2"><strong>ID du serveur:</strong><br><code>{{ guild.id }}</code></p>
+                <p class="mb-2"><strong>Préfixe actuel:</strong> <code>{{ config.prefix }}</code></p>
+                <hr>
+                <h6>Commandes utiles</h6>
+                <ul class="list-unstyled mb-0">
+                    <li><code>{{ config.prefix }}help</code> - Liste des commandes</li>
+                    <li><code>{{ config.prefix }}config</code> - Configuration</li>
+                    <li><code>{{ config.prefix }}ping</code> - Latence du bot</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

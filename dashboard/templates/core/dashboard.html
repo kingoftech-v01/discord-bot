@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block title %}Mes Serveurs - {{ site_name }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h2 class="mb-4">
+        <i class="bi bi-collection me-2"></i>Mes Serveurs
+    </h2>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {% if guilds %}
+        <div class="row g-4">
+            {% for guild in guilds %}
+                <div class="col-md-4 col-lg-3">
+                    <div class="card guild-card h-100" onclick="{% if guild.bot_present %}window.location='{% url 'server_dashboard' guild.id %}'{% else %}alert('Le bot n\\'est pas présent sur ce serveur.'){% endif %}">
+                        <div class="card-body text-center p-4">
+                            {% if guild.icon %}
+                                <img src="https://cdn.discordapp.com/icons/{{ guild.id }}/{{ guild.icon }}.png"
+                                     class="guild-icon mb-3" alt="{{ guild.name }}">
+                            {% else %}
+                                <div class="guild-icon mb-3 d-flex align-items-center justify-content-center mx-auto"
+                                     style="background-color: var(--discord-blurple); font-size: 1.5rem;">
+                                    {{ guild.name|slice:":2"|upper }}
+                                </div>
+                            {% endif %}
+                            <h5 class="card-title mb-2">{{ guild.name }}</h5>
+                            {% if guild.bot_present %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>Bot présent
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary">
+                                    <i class="bi bi-x-circle me-1"></i>Bot absent
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-emoji-frown display-1 text-secondary mb-3"></i>
+                <h4>Aucun serveur trouvé</h4>
+                <p class="text-secondary">
+                    Vous n'avez pas de serveurs avec les permissions administrateur,
+                    ou le bot n'est installé sur aucun de vos serveurs.
+                </p>
+                <a href="#" class="btn btn-discord">
+                    <i class="bi bi-plus-circle me-2"></i>Inviter le bot
+                </a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

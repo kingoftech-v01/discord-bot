@@ -1,0 +1,246 @@
+/* Discord Bot Dashboard Custom Styles */
+
+:root {
+    --discord-primary: #5865F2;
+    --discord-green: #57F287;
+    --discord-yellow: #FEE75C;
+    --discord-red: #ED4245;
+    --discord-dark: #2C2F33;
+    --discord-darker: #23272A;
+    --discord-light: #99AAB5;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--discord-darker);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--discord-dark);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--discord-primary);
+}
+
+/* Discord button */
+.btn-discord {
+    background-color: var(--discord-primary);
+    border-color: var(--discord-primary);
+    color: white;
+}
+
+.btn-discord:hover {
+    background-color: #4752c4;
+    border-color: #4752c4;
+    color: white;
+}
+
+.btn-discord:focus {
+    box-shadow: 0 0 0 0.2rem rgba(88, 101, 242, 0.5);
+}
+
+/* Background Discord */
+.bg-discord {
+    background-color: var(--discord-primary) !important;
+}
+
+/* Cards */
+.card {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.card-header {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Form controls */
+.form-control, .form-select {
+    background-color: var(--discord-darker);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--discord-darker);
+    border-color: var(--discord-primary);
+    color: white;
+    box-shadow: 0 0 0 0.2rem rgba(88, 101, 242, 0.25);
+}
+
+.form-control::placeholder {
+    color: var(--discord-light);
+}
+
+/* Form switch */
+.form-check-input:checked {
+    background-color: var(--discord-primary);
+    border-color: var(--discord-primary);
+}
+
+/* Tables */
+.table-dark {
+    --bs-table-bg: transparent;
+    --bs-table-hover-bg: rgba(255, 255, 255, 0.05);
+}
+
+/* Sidebar */
+.sidebar {
+    min-height: calc(100vh - 56px);
+}
+
+.sidebar .nav-link {
+    color: var(--discord-light);
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    transition: all 0.2s;
+}
+
+.sidebar .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.sidebar .nav-link.active {
+    background-color: var(--discord-primary);
+    color: white;
+}
+
+.sidebar .nav-link i {
+    width: 24px;
+}
+
+/* Badges */
+.badge {
+    font-weight: 500;
+}
+
+/* Progress bars */
+.progress {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Modals */
+.modal-content {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+/* Alerts */
+.alert {
+    border: none;
+    border-radius: 8px;
+}
+
+/* Feature cards on home page */
+.feature-icon {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.5rem;
+}
+
+/* Stats cards */
+.stat-card {
+    transition: transform 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+/* Navigation brand */
+.navbar-brand {
+    font-weight: 600;
+}
+
+/* User avatar */
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* Server icon */
+.server-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    object-fit: cover;
+    background-color: var(--discord-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: white;
+}
+
+/* List group items */
+.list-group-item {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Pagination */
+.page-link {
+    background-color: var(--discord-dark);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.page-link:hover {
+    background-color: var(--discord-primary);
+    border-color: var(--discord-primary);
+    color: white;
+}
+
+.page-item.active .page-link {
+    background-color: var(--discord-primary);
+    border-color: var(--discord-primary);
+}
+
+.page-item.disabled .page-link {
+    background-color: var(--discord-darker);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: var(--discord-light);
+}
+
+/* Code blocks */
+code {
+    background-color: rgba(0, 0, 0, 0.3);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .sidebar {
+        min-height: auto;
+    }
+
+    .stat-card {
+        margin-bottom: 1rem;
+    }
+}

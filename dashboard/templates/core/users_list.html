@@ -1,0 +1,266 @@
+{% extends 'core/server_base.html' %}
+{% load humanize %}
+
+{% block title %}Utilisateurs - {{ guild.name }}{% endblock %}
+
+{% block server_content %}
+<h2 class="mb-4">
+    <i class="bi bi-people me-2"></i>Utilisateurs
+</h2>
+
+<!-- Filtres -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Rechercher</label>
+                <input type="text" class="form-control" name="search"
+                       value="{{ request.GET.search }}" placeholder="Nom d'utilisateur...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Trier par</label>
+                <select class="form-select" name="sort">
+                    <option value="level" {% if request.GET.sort == 'level' %}selected{% endif %}>Niveau</option>
+                    <option value="xp" {% if request.GET.sort == 'xp' %}selected{% endif %}>XP Total</option>
+                    <option value="messages" {% if request.GET.sort == 'messages' %}selected{% endif %}>Messages</option>
+                    <option value="balance" {% if request.GET.sort == 'balance' %}selected{% endif %}>Balance</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Ordre</label>
+                <select class="form-select" name="order">
+                    <option value="desc" {% if request.GET.order == 'desc' %}selected{% endif %}>Decroissant</option>
+                    <option value="asc" {% if request.GET.order == 'asc' %}selected{% endif %}>Croissant</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-discord w-100">
+                    <i class="bi bi-search me-1"></i>Filtrer
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Liste des utilisateurs -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Classement</h5>
+        <span class="badge bg-discord">{{ users|length }} utilisateur{{ users|length|pluralize }}</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">#</th>
+                        <th>Utilisateur</th>
+                        <th class="text-center">Niveau</th>
+                        <th class="text-center">XP</th>
+                        <th class="text-center">Messages</th>
+                        <th class="text-center">Balance</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>
+                            {% if forloop.counter <= 3 %}
+                            <span class="badge {% if forloop.counter == 1 %}bg-warning{% elif forloop.counter == 2 %}bg-secondary{% else %}bg-danger{% endif %} text-dark">
+                                {% if forloop.counter == 1 %}
+                                <i class="bi bi-trophy-fill"></i>
+                                {% else %}
+                                {{ forloop.counter }}
+                                {% endif %}
+                            </span>
+                            {% else %}
+                            <span class="text-muted">{{ forloop.counter }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                {% if user.avatar %}
+                                <img src="{{ user.avatar }}" class="rounded-circle me-2" width="32" height="32">
+                                {% else %}
+                                <div class="rounded-circle bg-discord me-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                    <i class="bi bi-person"></i>
+                                </div>
+                                {% endif %}
+                                <div>
+                                    <strong>{{ user.username|default:"Utilisateur inconnu" }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ user.user_id }}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-warning text-dark fs-6">{{ user.level }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="text-info">{{ user.xp|intcomma }}</span>
+                            <div class="progress mt-1" style="height: 4px; width: 80px; margin: 0 auto;">
+                                <div class="progress-bar bg-info" style="width: {{ user.xp_progress }}%;"></div>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            {{ user.messages_count|intcomma }}
+                        </td>
+                        <td class="text-center">
+                            <span class="text-success">{{ user.balance|intcomma }} <i class="bi bi-coin"></i></span>
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-info" data-bs-toggle="modal"
+                                        data-bs-target="#userModal{{ user.user_id }}" title="Details">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button class="btn btn-outline-warning" data-bs-toggle="modal"
+                                        data-bs-target="#editModal{{ user.user_id }}" title="Modifier">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="post" class="d-inline"
+                                      onsubmit="return confirm('Reset les stats de cet utilisateur?');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="reset_user">
+                                    <input type="hidden" name="user_id" value="{{ user.user_id }}">
+                                    <button type="submit" class="btn btn-outline-danger" title="Reset">
+                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-people fs-1 mb-3 d-block"></i>
+                            <p>Aucun utilisateur trouve</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% if users %}
+    <div class="card-footer">
+        <nav>
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                </li>
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modals pour chaque utilisateur -->
+{% for user in users %}
+<!-- Modal Details -->
+<div class="modal fade" id="userModal{{ user.user_id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-person-badge me-2"></i>{{ user.username }}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row text-center mb-4">
+                    <div class="col-4">
+                        <div class="fs-3 text-warning">{{ user.level }}</div>
+                        <small class="text-muted">Niveau</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="fs-3 text-info">{{ user.xp|intcomma }}</div>
+                        <small class="text-muted">XP Total</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="fs-3 text-success">{{ user.balance|intcomma }}</div>
+                        <small class="text-muted">Balance</small>
+                    </div>
+                </div>
+
+                <hr class="border-secondary">
+
+                <div class="row">
+                    <div class="col-6">
+                        <p><strong>Messages:</strong> {{ user.messages_count|intcomma }}</p>
+                        <p><strong>Avertissements:</strong> {{ user.warnings_count|default:0 }}</p>
+                    </div>
+                    <div class="col-6">
+                        <p><strong>Infractions:</strong> {{ user.infractions_count|default:0 }}</p>
+                        <p><strong>Rejoint:</strong> {{ user.joined_at|default:"N/A" }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <a href="{% url 'infractions_list' guild.id %}?user={{ user.user_id }}" class="btn btn-outline-warning">
+                    Voir les infractions
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Edit -->
+<div class="modal fade" id="editModal{{ user.user_id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Modifier {{ user.username }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="edit_user">
+                <input type="hidden" name="user_id" value="{{ user.user_id }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Niveau</label>
+                        <input type="number" class="form-control" name="level"
+                               value="{{ user.level }}" min="0" max="999">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">XP</label>
+                        <input type="number" class="form-control" name="xp"
+                               value="{{ user.xp }}" min="0">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Balance</label>
+                        <input type="number" class="form-control" name="balance"
+                               value="{{ user.balance }}" min="0">
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-discord">Sauvegarder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

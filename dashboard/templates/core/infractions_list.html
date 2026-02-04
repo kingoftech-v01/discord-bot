@@ -1,0 +1,296 @@
+{% extends 'core/server_base.html' %}
+{% load humanize %}
+
+{% block title %}Infractions - {{ guild.name }}{% endblock %}
+
+{% block server_content %}
+<h2 class="mb-4">
+    <i class="bi bi-exclamation-triangle me-2"></i>Infractions
+</h2>
+
+<!-- Statistiques rapides -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-danger bg-opacity-25">
+            <div class="card-body text-center">
+                <div class="fs-2 text-danger">{{ stats.total_infractions|default:0 }}</div>
+                <small class="text-muted">Total Infractions</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning bg-opacity-25">
+            <div class="card-body text-center">
+                <div class="fs-2 text-warning">{{ stats.today|default:0 }}</div>
+                <small class="text-muted">Aujourd'hui</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info bg-opacity-25">
+            <div class="card-body text-center">
+                <div class="fs-2 text-info">{{ stats.this_week|default:0 }}</div>
+                <small class="text-muted">Cette semaine</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-secondary bg-opacity-25">
+            <div class="card-body text-center">
+                <div class="fs-2 text-light">{{ stats.unique_users|default:0 }}</div>
+                <small class="text-muted">Utilisateurs uniques</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filtres -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Utilisateur</label>
+                <input type="text" class="form-control" name="user"
+                       value="{{ request.GET.user }}" placeholder="ID ou nom...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Action</label>
+                <select class="form-select" name="action_type">
+                    <option value="">Toutes</option>
+                    <option value="warn" {% if request.GET.action_type == 'warn' %}selected{% endif %}>Avertissement</option>
+                    <option value="mute" {% if request.GET.action_type == 'mute' %}selected{% endif %}>Mute</option>
+                    <option value="kick" {% if request.GET.action_type == 'kick' %}selected{% endif %}>Kick</option>
+                    <option value="ban" {% if request.GET.action_type == 'ban' %}selected{% endif %}>Ban</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Periode</label>
+                <select class="form-select" name="period">
+                    <option value="">Tout</option>
+                    <option value="today" {% if request.GET.period == 'today' %}selected{% endif %}>Aujourd'hui</option>
+                    <option value="week" {% if request.GET.period == 'week' %}selected{% endif %}>Cette semaine</option>
+                    <option value="month" {% if request.GET.period == 'month' %}selected{% endif %}>Ce mois</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-discord w-100">
+                    <i class="bi bi-funnel me-1"></i>Filtrer
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Liste des infractions -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Historique des Infractions</h5>
+        <div>
+            <form method="post" class="d-inline"
+                  onsubmit="return confirm('Supprimer toutes les infractions? Cette action est irreversible.');">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="clear_all">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-trash me-1"></i>Tout effacer
+                </button>
+            </form>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Utilisateur</th>
+                        <th>Mot detecte</th>
+                        <th>Action</th>
+                        <th>Nb. infractions</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for infraction in infractions %}
+                    <tr>
+                        <td>
+                            <small>{{ infraction.created_at|date:"d/m/Y H:i" }}</small>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="rounded-circle bg-discord me-2 d-flex align-items-center justify-content-center"
+                                     style="width: 28px; height: 28px;">
+                                    <i class="bi bi-person small"></i>
+                                </div>
+                                <div>
+                                    <strong>{{ infraction.username|default:"Inconnu" }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ infraction.user_id }}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <code class="text-danger">{{ infraction.word_detected }}</code>
+                            {% if infraction.language %}
+                            <span class="badge bg-secondary ms-1">{{ infraction.language }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if infraction.action_taken == 'warn' %}
+                            <span class="badge bg-warning text-dark">
+                                <i class="bi bi-exclamation-triangle me-1"></i>Warn
+                            </span>
+                            {% elif infraction.action_taken == 'mute' %}
+                            <span class="badge bg-info">
+                                <i class="bi bi-mic-mute me-1"></i>Mute
+                            </span>
+                            {% elif infraction.action_taken == 'kick' %}
+                            <span class="badge bg-danger">
+                                <i class="bi bi-door-open me-1"></i>Kick
+                            </span>
+                            {% elif infraction.action_taken == 'ban' %}
+                            <span class="badge bg-dark text-danger border border-danger">
+                                <i class="bi bi-hammer me-1"></i>Ban
+                            </span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ infraction.action_taken }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge {% if infraction.infraction_count >= 5 %}bg-danger{% elif infraction.infraction_count >= 3 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                {{ infraction.infraction_count }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-info" data-bs-toggle="modal"
+                                        data-bs-target="#detailModal{{ infraction.id }}" title="Details">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <form method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete_infraction">
+                                    <input type="hidden" name="infraction_id" value="{{ infraction.id }}">
+                                    <button type="submit" class="btn btn-outline-danger" title="Supprimer">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted">
+                            <i class="bi bi-shield-check fs-1 mb-3 d-block text-success"></i>
+                            <p>Aucune infraction enregistree</p>
+                            <p class="small">Votre serveur est exemplaire!</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% if infractions %}
+    <div class="card-footer">
+        <nav>
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Precedent</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link">Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }}</span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Suivant</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Top offenders -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-person-x me-2"></i>Recidivistes</h5>
+    </div>
+    <div class="card-body p-0">
+        <ul class="list-group list-group-flush bg-transparent">
+            {% for offender in top_offenders %}
+            <li class="list-group-item bg-transparent d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>{{ offender.username|default:"Utilisateur" }}</strong>
+                    <small class="text-muted ms-2">{{ offender.user_id }}</small>
+                </div>
+                <div>
+                    <span class="badge bg-danger me-2">{{ offender.total_infractions }} infractions</span>
+                    <form method="post" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="reset_user_infractions">
+                        <input type="hidden" name="user_id" value="{{ offender.user_id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Reset">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </button>
+                    </form>
+                </div>
+            </li>
+            {% empty %}
+            <li class="list-group-item bg-transparent text-center text-muted">
+                Aucun recidiviste
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
+<!-- Modals Details -->
+{% for infraction in infractions %}
+<div class="modal fade" id="detailModal{{ infraction.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Details de l'infraction</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <strong>Message original:</strong>
+                    <div class="bg-black p-2 rounded mt-1">
+                        <code>{{ infraction.original_message|default:"Non disponible" }}</code>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <strong>Mot detecte:</strong>
+                    <code class="text-danger ms-2">{{ infraction.word_detected }}</code>
+                </div>
+                <div class="mb-3">
+                    <strong>Channel:</strong>
+                    <span class="ms-2">#{{ infraction.channel_name|default:"inconnu" }}</span>
+                </div>
+                <div class="mb-3">
+                    <strong>Date:</strong>
+                    <span class="ms-2">{{ infraction.created_at|date:"d/m/Y a H:i:s" }}</span>
+                </div>
+                <div class="mb-3">
+                    <strong>Action appliquee:</strong>
+                    <span class="ms-2">{{ infraction.action_taken }}</span>
+                </div>
+                <div>
+                    <strong>Nombre d'infractions (au moment):</strong>
+                    <span class="badge bg-warning text-dark ms-2">{{ infraction.infraction_count }}</span>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

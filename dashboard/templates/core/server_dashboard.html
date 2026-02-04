@@ -1,0 +1,200 @@
+{% extends 'core/server_base.html' %}
+{% load humanize %}
+
+{% block title %}{{ guild.name }} - Dashboard{% endblock %}
+
+{% block server_content %}
+<h2 class="mb-4">
+    <i class="bi bi-speedometer2 me-2"></i>Dashboard
+</h2>
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <span class="stat-value">{{ users_count|intcomma }}</span>
+            <span class="stat-label">Utilisateurs</span>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <span class="stat-value text-discord-yellow">{{ warnings_count|intcomma }}</span>
+            <span class="stat-label">Avertissements</span>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <span class="stat-value text-discord-red">{{ banned_words_count|intcomma }}</span>
+            <span class="stat-label">Mots interdits</span>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <span class="stat-value text-discord-green">{{ config.prefix }}</span>
+            <span class="stat-label">Préfixe</span>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Quick Actions -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-lightning me-2"></i>Actions Rapides</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="autoModToggle"
+                               {% if config.auto_mod_enabled %}checked{% endif %}
+                               onchange="toggleModule('auto_mod', this.checked)">
+                        <label class="form-check-label" for="autoModToggle">
+                            <i class="bi bi-shield-check me-2"></i>Auto-Modération
+                        </label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="levelingToggle"
+                               {% if config.leveling_enabled %}checked{% endif %}
+                               onchange="toggleModule('leveling', this.checked)">
+                        <label class="form-check-label" for="levelingToggle">
+                            <i class="bi bi-graph-up me-2"></i>Système de Leveling
+                        </label>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="{% url 'moderation_settings' guild.id %}" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-shield me-1"></i>Configurer la modération
+                    </a>
+                    <a href="{% url 'leveling_settings' guild.id %}" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-graph-up me-1"></i>Configurer le leveling
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Users -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>Top Utilisateurs</h5>
+                <a href="{% url 'users_list' guild.id %}" class="btn btn-sm btn-outline-light">Voir tout</a>
+            </div>
+            <div class="card-body">
+                {% if top_users %}
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>User ID</th>
+                                <th>Niveau</th>
+                                <th>XP Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in top_users %}
+                                <tr>
+                                    <td>
+                                        {% if forloop.counter == 1 %}🥇
+                                        {% elif forloop.counter == 2 %}🥈
+                                        {% elif forloop.counter == 3 %}🥉
+                                        {% else %}{{ forloop.counter }}
+                                        {% endif %}
+                                    </td>
+                                    <td><code>{{ user.user_id }}</code></td>
+                                    <td>{{ user.level }}</td>
+                                    <td>{{ user.total_xp|intcomma }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="text-muted text-center mb-0">Aucun utilisateur pour le moment</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Infractions -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Infractions Récentes</h5>
+                <a href="{% url 'infractions_list' guild.id %}" class="btn btn-sm btn-outline-light">Voir tout</a>
+            </div>
+            <div class="card-body">
+                {% if recent_infractions %}
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>User ID</th>
+                                    <th>Mot</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for infraction in recent_infractions %}
+                                    <tr>
+                                        <td><small>{{ infraction.created_at|slice:":16" }}</small></td>
+                                        <td><code>{{ infraction.user_id }}</code></td>
+                                        <td><span class="badge bg-secondary">{{ infraction.word_used }}</span></td>
+                                        <td>
+                                            {% if infraction.action_taken == 'warn' %}
+                                                <span class="badge bg-warning text-dark">Warn</span>
+                                            {% elif infraction.action_taken == 'mute' %}
+                                                <span class="badge bg-info">Mute</span>
+                                            {% elif infraction.action_taken == 'kick' %}
+                                                <span class="badge bg-danger">Kick</span>
+                                            {% elif infraction.action_taken == 'ban' %}
+                                                <span class="badge bg-dark">Ban</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ infraction.action_taken }}</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center mb-0">Aucune infraction récente</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleModule(module, enabled) {
+    fetch('{% url "api_toggle_module" guild.id %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: `module=${module}&enabled=${enabled}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Success feedback
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+}
+</script>
+{% endblock %}

@@ -111,9 +111,11 @@ docker-compose -f docker-compose.prod.yml up -d --build
 |----------|-------------|
 | [Installation Guide](INSTALLATION.md) | Detailed installation instructions |
 | [Configuration](CONFIGURATION.md) | Environment variables and settings |
-| [API Documentation](API.md) | REST API reference |
+| [Architecture](ARCHITECTURE.md) | Deep dive into codebase structure, data flow, and design decisions |
+| [Security](SECURITY.md) | Security measures, hardening, and contributor security checklist |
+| [API Documentation](API.md) | REST API reference with examples |
 | [Docker Setup](DOCKER.md) | Container deployment guide |
-| [Contributing](CONTRIBUTING.md) | How to contribute |
+| [Contributing](CONTRIBUTING.md) | Development workflow, code style, and PR guidelines |
 
 ## Architecture
 

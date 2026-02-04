@@ -1,5 +1,15 @@
 """
-Cog pour l'administration et la configuration du bot.
+Administration and configuration cog for the Discord bot.
+
+Provides server administrators with commands to customize bot behavior on a
+per-guild basis: setting the command prefix, configuring logging and level-up
+channels, toggling auto-moderation and leveling systems, and customizing the
+level-up notification message.
+
+Also includes a comprehensive ``help`` command that lists all available
+commands by category, a ``botinfo`` command showing global bot statistics,
+an ``invite`` command generating an OAuth2 invitation link, and several
+owner-only maintenance commands (``sync``, ``reload``, ``shutdown``).
 """
 import discord
 from discord.ext import commands
@@ -13,20 +23,48 @@ from utils.database import db
 
 
 class Admin(commands.Cog):
-    """Configuration et administration du bot."""
+    """Administration and configuration cog for per-guild bot settings.
+
+    Groups server-configuration subcommands under the ``config`` hybrid
+    command group and provides informational commands (``help``, ``botinfo``,
+    ``invite``) as well as owner-only maintenance utilities.
+
+    Attributes:
+        bot: The bot instance this cog is attached to.
+    """
 
     def __init__(self, bot: commands.Bot):
+        """Initialize the Admin cog.
+
+        Args:
+            bot: The bot instance to bind this cog to.
+        """
         self.bot = bot
 
     @commands.hybrid_group(name="config", aliases=["settings", "parametres"])
     @commands.has_permissions(administrator=True)
     async def config(self, ctx: commands.Context):
-        """Commandes de configuration du bot."""
+        """Server configuration command group (admin only).
+
+        When invoked without a subcommand, displays the current guild
+        configuration overview. Otherwise delegates to the specified
+        subcommand.
+
+        Args:
+            ctx: The invocation context.
+        """
         if ctx.invoked_subcommand is None:
             await self.show_config(ctx)
 
     async def show_config(self, ctx: commands.Context):
-        """Affiche la configuration actuelle."""
+        """Display the current guild configuration as an embed.
+
+        Shows configured channels (welcome, logs, level-up), feature
+        toggles (auto-mod, leveling), and the current command prefix.
+
+        Args:
+            ctx: The invocation context.
+        """
         config = await db.get_guild_config(ctx.guild.id)
 
         embed = discord.Embed(
@@ -35,7 +73,7 @@ class Admin(commands.Cog):
             timestamp=datetime.now()
         )
 
-        # Channels
+        # Resolve channel objects from stored IDs (defaulting to 0 for safe lookup)
         welcome_ch = ctx.guild.get_channel(config.get('welcome_channel_id') or 0)
         log_ch = ctx.guild.get_channel(config.get('log_channel_id') or 0)
         level_ch = ctx.guild.get_channel(config.get('level_up_channel_id') or 0)
@@ -48,7 +86,7 @@ class Admin(commands.Cog):
             inline=False
         )
 
-        # Fonctionnalités
+        # Feature toggle statuses
         embed.add_field(
             name="Fonctionnalités",
             value=f" Auto-Mod: {'Activé' if config.get('auto_mod_enabled', True) else 'Désactivé'}\n"
@@ -56,7 +94,7 @@ class Admin(commands.Cog):
             inline=True
         )
 
-        # Préfixe
+        # Current command prefix
         embed.add_field(
             name="Préfixe",
             value=f"`{config.get('prefix', PREFIX)}`",
@@ -69,7 +107,14 @@ class Admin(commands.Cog):
     @config.command(name="prefix")
     @app_commands.describe(prefix="Le nouveau préfixe")
     async def config_prefix(self, ctx: commands.Context, prefix: str):
-        """Change le préfixe du bot."""
+        """Change the bot's command prefix for this server.
+
+        The prefix is limited to a maximum of 5 characters to prevent abuse.
+
+        Args:
+            ctx: The invocation context.
+            prefix: The new command prefix string (max 5 characters).
+        """
         if len(prefix) > 5:
             return await ctx.send(f"{Emojis.ERROR} Le préfixe ne peut pas dépasser 5 caractères.")
 
@@ -85,7 +130,12 @@ class Admin(commands.Cog):
     @config.command(name="logchannel")
     @app_commands.describe(channel="Le channel de logs")
     async def config_logchannel(self, ctx: commands.Context, channel: discord.TextChannel):
-        """Configure le channel de logs."""
+        """Set the channel where moderation and event logs are sent.
+
+        Args:
+            ctx: The invocation context.
+            channel: The text channel to use for logging.
+        """
         await db.update_guild_config(ctx.guild.id, log_channel_id=channel.id)
 
         embed = discord.Embed(
@@ -98,7 +148,16 @@ class Admin(commands.Cog):
     @config.command(name="levelchannel")
     @app_commands.describe(channel="Le channel pour les level up (laissez vide pour le channel actuel)")
     async def config_levelchannel(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
-        """Configure le channel pour les notifications de level up."""
+        """Set the channel for level-up notifications.
+
+        If no channel is provided, level-up messages will be sent in the
+        same channel where the user earned the level (default behavior).
+
+        Args:
+            ctx: The invocation context.
+            channel: The dedicated level-up notification channel, or ``None``
+                to use the channel where the XP was earned.
+        """
         channel_id = channel.id if channel else None
         await db.update_guild_config(ctx.guild.id, level_up_channel_id=channel_id)
 
@@ -117,7 +176,15 @@ class Admin(commands.Cog):
     @config.command(name="automod")
     @app_commands.describe(etat="Activer ou désactiver (on/off)")
     async def config_automod(self, ctx: commands.Context, etat: str):
-        """Active ou désactive l'auto-modération."""
+        """Toggle the auto-moderation system on or off for this server.
+
+        Accepts ``on``, ``off``, ``true``, ``false``, ``1``, or ``0`` as
+        valid input values.
+
+        Args:
+            ctx: The invocation context.
+            etat: The desired state (on/off/true/false/1/0).
+        """
         if etat.lower() not in ['on', 'off', 'true', 'false', '1', '0']:
             return await ctx.send(f"{Emojis.ERROR} Utilisez: on/off")
 
@@ -133,7 +200,15 @@ class Admin(commands.Cog):
     @config.command(name="leveling")
     @app_commands.describe(etat="Activer ou désactiver (on/off)")
     async def config_leveling(self, ctx: commands.Context, etat: str):
-        """Active ou désactive le système de leveling."""
+        """Toggle the XP leveling system on or off for this server.
+
+        Accepts ``on``, ``off``, ``true``, ``false``, ``1``, or ``0`` as
+        valid input values.
+
+        Args:
+            ctx: The invocation context.
+            etat: The desired state (on/off/true/false/1/0).
+        """
         if etat.lower() not in ['on', 'off', 'true', 'false', '1', '0']:
             return await ctx.send(f"{Emojis.ERROR} Utilisez: on/off")
 
@@ -149,9 +224,19 @@ class Admin(commands.Cog):
     @config.command(name="levelupmsg")
     @app_commands.describe(message="Le message de level up ({user}, {level})")
     async def config_levelupmsg(self, ctx: commands.Context, *, message: str):
-        """Configure le message de level up."""
+        """Set a custom level-up notification message template.
+
+        Supports ``{user}`` (member mention) and ``{level}`` (new level
+        number) placeholders. A preview is shown after saving, using level
+        5 as an example.
+
+        Args:
+            ctx: The invocation context.
+            message: The level-up message template string.
+        """
         await db.update_guild_config(ctx.guild.id, level_up_message=message)
 
+        # Generate a preview with placeholder substitution (level 5 as example)
         preview = message.replace('{user}', ctx.author.mention)
         preview = preview.replace('{level}', '5')
 
@@ -166,8 +251,19 @@ class Admin(commands.Cog):
     @commands.hybrid_command(name="help", aliases=["aide", "commands"])
     @app_commands.describe(commande="La commande pour laquelle obtenir de l'aide")
     async def help_command(self, ctx: commands.Context, commande: Optional[str] = None):
-        """Affiche l'aide du bot."""
+        """Display bot help -- either a command overview or details for a specific command.
+
+        When called without arguments, lists all commands grouped by category.
+        When a command name is provided, shows that command's description,
+        aliases, and usage signature.
+
+        Args:
+            ctx: The invocation context.
+            commande: The name of a specific command to get help for.
+                If ``None``, the full command list is displayed.
+        """
         if commande:
+            # Show detailed help for a specific command
             cmd = self.bot.get_command(commande)
             if not cmd:
                 return await ctx.send(f"{Emojis.ERROR} Commande `{commande}` introuvable.")
@@ -181,6 +277,7 @@ class Admin(commands.Cog):
             if cmd.aliases:
                 embed.add_field(name="Aliases", value=", ".join(f"`{a}`" for a in cmd.aliases))
 
+            # Build the usage string from the command's parameter signature
             usage = f"{ctx.prefix}{cmd.name}"
             if cmd.signature:
                 usage += f" {cmd.signature}"
@@ -189,13 +286,14 @@ class Admin(commands.Cog):
             await ctx.send(embed=embed)
             return
 
+        # Show the full categorized command overview
         embed = discord.Embed(
             title=f"Aide - {self.bot.user.name}",
             description=f"Préfixe: `{ctx.prefix}` | Utilisez `{ctx.prefix}help <commande>` pour plus d'infos",
             color=Colors.PRIMARY
         )
 
-        # Catégories de commandes
+        # Command categories with their associated command names
         categories = {
             " Leveling": ["rank", "leaderboard", "levelroles"],
             " Économie": ["daily", "balance", "richest", "give"],
@@ -219,7 +317,15 @@ class Admin(commands.Cog):
 
     @commands.hybrid_command(name="botinfo", aliases=["about", "info"])
     async def botinfo(self, ctx: commands.Context):
-        """Affiche les informations du bot."""
+        """Display global bot statistics and feature list.
+
+        Shows the number of guilds, total users, total channels, registered
+        commands, current API latency, bot version, and a summary of the
+        bot's main feature areas.
+
+        Args:
+            ctx: The invocation context.
+        """
         embed = discord.Embed(
             title=f"À propos de {self.bot.user.name}",
             color=Colors.PRIMARY,
@@ -228,7 +334,7 @@ class Admin(commands.Cog):
 
         embed.set_thumbnail(url=self.bot.user.display_avatar.url)
 
-        # Stats
+        # Aggregate statistics across all guilds
         total_members = sum(g.member_count for g in self.bot.guilds)
         total_channels = sum(len(g.channels) for g in self.bot.guilds)
 
@@ -256,9 +362,17 @@ class Admin(commands.Cog):
 
     @commands.hybrid_command(name="invite")
     async def invite(self, ctx: commands.Context):
-        """Obtenir le lien d'invitation du bot."""
+        """Generate and display the bot's OAuth2 invitation link.
+
+        Creates an invite URL with administrator permissions and both ``bot``
+        and ``applications.commands`` OAuth2 scopes so slash commands are
+        registered on the target guild.
+
+        Args:
+            ctx: The invocation context.
+        """
         permissions = discord.Permissions(
-            administrator=True  # Ou définir des permissions spécifiques
+            administrator=True  # Requests admin; could be narrowed to specific permissions
         )
         invite_url = discord.utils.oauth_url(
             self.bot.user.id,
@@ -277,7 +391,14 @@ class Admin(commands.Cog):
     @commands.command(name="sync")
     @commands.is_owner()
     async def sync(self, ctx: commands.Context):
-        """[Owner] Synchronise les slash commands."""
+        """[Owner only] Synchronize slash commands with the Discord API.
+
+        Pushes the current application command tree to Discord so that new
+        or updated slash commands become visible to users.
+
+        Args:
+            ctx: The invocation context.
+        """
         await ctx.send(f"{Emojis.LOADING} Synchronisation en cours...")
         try:
             synced = await self.bot.tree.sync()
@@ -288,7 +409,15 @@ class Admin(commands.Cog):
     @commands.command(name="reload")
     @commands.is_owner()
     async def reload_cog(self, ctx: commands.Context, cog: str):
-        """[Owner] Recharge un cog."""
+        """[Owner only] Hot-reload a cog extension without restarting the bot.
+
+        Useful during development to apply code changes to a specific cog
+        on the fly.
+
+        Args:
+            ctx: The invocation context.
+            cog: The cog module name (e.g., ``"utility"``, ``"admin"``).
+        """
         try:
             await self.bot.reload_extension(f"cogs.{cog}")
             await ctx.send(f"{Emojis.SUCCESS} Cog `{cog}` rechargé!")
@@ -298,10 +427,22 @@ class Admin(commands.Cog):
     @commands.command(name="shutdown")
     @commands.is_owner()
     async def shutdown(self, ctx: commands.Context):
-        """[Owner] Arrête le bot."""
+        """[Owner only] Gracefully shut down the bot.
+
+        Sends a confirmation message and then closes the bot's connection
+        to Discord, which terminates the process.
+
+        Args:
+            ctx: The invocation context.
+        """
         await ctx.send(f"{Emojis.INFO} Arrêt du bot...")
         await self.bot.close()
 
 
 async def setup(bot: commands.Bot):
+    """Load the Admin cog into the bot.
+
+    Args:
+        bot: The bot instance to register the cog with.
+    """
     await bot.add_cog(Admin(bot))

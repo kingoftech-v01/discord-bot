@@ -1,5 +1,20 @@
 """
-Pytest configuration and fixtures.
+Pytest configuration and shared fixtures for all test suites.
+
+This module provides:
+    - Path setup so that bot modules (``config``, ``utils.database``, etc.) can be
+      imported from any test file without manual ``sys.path`` manipulation.
+    - Database fixtures (``temp_db_path``, ``initialized_db``) that create a
+      temporary SQLite file with the full bot schema for each test.
+    - Sample data fixtures (``sample_users``, ``sample_banned_words``) used by
+      multiple test modules.
+    - Mock Discord object fixtures (``mock_discord_user``, ``mock_discord_guild``,
+      ``mock_discord_message``) that simulate Discord.py models so that cog logic
+      can be tested without a live Discord connection.
+
+All async fixtures use ``pytest-asyncio`` with ``asyncio_mode = auto`` (set in
+``pytest.ini``), so the ``@pytest.mark.asyncio`` decorator is only required on
+test *functions*, not on async fixtures.
 """
 import os
 import sys
@@ -7,7 +22,8 @@ import pytest
 import tempfile
 import aiosqlite
 
-# Add project root to path
+# Add the project root to ``sys.path`` so that ``import config`` and
+# ``from utils.database import db`` work inside test files.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 

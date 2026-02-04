@@ -1,6 +1,25 @@
 """
-Cog pour le filtrage des mots interdits avec sanctions progressives.
-Détecte les insultes dans toutes les langues et applique des sanctions automatiques.
+Advanced multi-language profanity filter with progressive punishments.
+
+This module provides a comprehensive profanity detection and enforcement system
+that supports multiple languages and applies escalating sanctions based on a
+user's infraction history. Key features include:
+
+- **Multi-language support**: Banned words can be categorized by language
+  (French, English, Spanish, German, Italian, Portuguese, Arabic, Russian,
+  Chinese, Japanese) or applied globally with the "all" category.
+- **Progressive punishments**: Sanctions escalate as infractions accumulate:
+  warn -> mute -> kick -> ban. Thresholds are fully configurable per guild.
+- **DM notifications**: Optionally notifies offending users via DM with details
+  about their infraction, the applied sanction, and upcoming punishment thresholds.
+- **Logging**: All infractions are logged to the guild's configured log channel
+  with details including the detected word (spoilered), severity, sanction, and
+  the original message content.
+- **Management commands**: Guild staff can add, remove, import, and list banned
+  words, view infraction statistics, and configure punishment thresholds.
+
+All banned word lists, infraction records, and configuration are persisted in
+the SQLite database via the ``utils.database`` module.
 """
 import discord
 from discord.ext import commands
@@ -15,10 +34,26 @@ from utils.database import db
 
 
 class ProfanityFilter(commands.Cog):
-    """Système avancé de filtrage des mots interdits avec sanctions progressives."""
+    """Discord cog for detecting banned words and applying progressive punishments.
+
+    Scans every non-bot, non-admin message for profanity matches against a
+    per-guild database of banned words. When a match is found, the system:
+    1. Optionally deletes the offending message.
+    2. Determines the appropriate punishment based on the user's infraction count.
+    3. Applies the punishment (warn, mute, kick, or ban).
+    4. Notifies the user via DM (if configured).
+    5. Posts a warning in the channel (auto-deletes after 10 seconds).
+    6. Logs the infraction to the moderation log channel.
+
+    Attributes:
+        bot: The Discord bot instance.
+        language_names: Mapping of language codes to their display names,
+            used for user-facing labels in embeds and command output.
+    """
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # Mapping of ISO language codes to human-readable display names
         self.language_names = {
             "all": "Toutes",
             "fr": "Français",
@@ -34,7 +69,15 @@ class ProfanityFilter(commands.Cog):
         }
 
     async def log_infraction(self, guild: discord.Guild, embed: discord.Embed):
-        """Envoie un log d'infraction dans le channel de logs."""
+        """Send an infraction log embed to the guild's configured log channel.
+
+        Silently does nothing if no log channel is configured, if the channel
+        no longer exists, or if the bot lacks permission to send messages there.
+
+        Args:
+            guild: The Discord guild where the infraction occurred.
+            embed: The embed containing infraction details to log.
+        """
         config = await db.get_guild_config(guild.id)
         log_channel_id = config.get('log_channel_id')
         if log_channel_id:
@@ -47,15 +90,33 @@ class ProfanityFilter(commands.Cog):
 
     async def apply_punishment(self, member: discord.Member, punishment: str,
                                guild: discord.Guild, reason: str) -> bool:
-        """Applique une sanction à un membre."""
+        """Apply the determined punishment to a guild member.
+
+        Executes the appropriate Discord action based on the punishment type.
+        For "warn", no Discord API action is taken (the warning is only recorded
+        in the database). For "mute", the configured mute duration from the
+        guild's profanity config is used.
+
+        Args:
+            member: The guild member to punish.
+            punishment: The type of punishment to apply. One of:
+                ``"warn"``, ``"mute"``, ``"kick"``, ``"ban"``.
+            guild: The Discord guild where the infraction occurred.
+            reason: The reason string for the audit log.
+
+        Returns:
+            True if the punishment was successfully applied, False if the bot
+            lacked permissions or an error occurred.
+        """
         try:
             if punishment == "warn":
-                # Juste un avertissement, pas d'action Discord
+                # Warning only -- no Discord API action needed, just database record
                 return True
 
             elif punishment == "mute":
+                # Apply a timed mute using the guild's configured mute duration
                 config = await db.get_profanity_config(guild.id)
-                duration = config.get('mute_duration', 3600)
+                duration = config.get('mute_duration', 3600)  # Default: 1 hour
                 until = datetime.now() + timedelta(seconds=duration)
                 await member.timeout(until, reason=reason)
                 return True
@@ -77,38 +138,54 @@ class ProfanityFilter(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Détecte les mots interdits dans les messages."""
-        # Ignorer les bots et les DMs
+        """Scan incoming messages for banned words and enforce punishments.
+
+        This is the main detection pipeline. For each eligible message, it:
+        1. Checks the message content against the guild's banned word database.
+        2. If a match is found, deletes the message (if configured).
+        3. Determines the punishment level based on the user's infraction history.
+        4. Records the infraction in the database.
+        5. Applies the punishment (warn/mute/kick/ban).
+        6. Optionally DMs the user with infraction details and upcoming thresholds.
+        7. Posts a temporary warning in the channel (auto-deletes after 10s).
+        8. Logs the full infraction to the moderation log channel.
+
+        Bots, DMs, and administrators are always exempt from filtering.
+
+        Args:
+            message: The incoming Discord message to scan.
+        """
+        # Skip bot messages and DMs (filter only applies in guilds)
         if message.author.bot or not message.guild:
             return
 
-        # Ignorer les administrateurs
+        # Administrators are exempt from the profanity filter
         if message.author.guild_permissions.administrator:
             return
 
-        # Vérifier si le filtre est activé
+        # Check if the profanity filter is enabled for this guild
         config = await db.get_profanity_config(message.guild.id)
         if not config.get('enabled', True):
             return
 
-        # Vérifier le message
+        # Scan the message content against the guild's banned word database
         detected = await db.check_message_for_profanity(message.content, message.guild.id)
 
         if detected:
             word = detected['word']
             severity = detected['severity']
 
-            # Supprimer le message si configuré
+            # Delete the offending message if the guild config requires it
             if config.get('delete_message', True):
                 try:
                     await message.delete()
                 except discord.Forbidden:
                     pass
 
-            # Déterminer la sanction
+            # Determine the appropriate punishment based on infraction history
             punishment = await db.determine_punishment(message.author.id, message.guild.id)
 
-            # Enregistrer l'infraction
+            # Record the infraction in the database and get updated stats
             stats = await db.add_profanity_infraction(
                 user_id=message.author.id,
                 guild_id=message.guild.id,
@@ -117,13 +194,13 @@ class ProfanityFilter(commands.Cog):
                 action_taken=punishment
             )
 
-            # Appliquer la sanction
+            # Apply the determined punishment to the member
             reason = f"Utilisation de mot interdit (infraction #{stats['total_infractions']})"
             punishment_applied = await self.apply_punishment(
                 message.author, punishment, message.guild, reason
             )
 
-            # Messages de sanction
+            # Human-readable punishment descriptions for embeds
             punishment_messages = {
                 "warn": f"Vous avez reçu un avertissement.",
                 "mute": f"Vous avez été mute.",
@@ -131,7 +208,7 @@ class ProfanityFilter(commands.Cog):
                 "ban": f"Vous avez été banni du serveur."
             }
 
-            # Envoyer un DM à l'utilisateur si configuré
+            # Send a DM to the user with infraction details (if configured)
             if config.get('dm_user', True):
                 try:
                     dm_embed = discord.Embed(
@@ -151,7 +228,7 @@ class ProfanityFilter(commands.Cog):
                         inline=True
                     )
 
-                    # Avertissements sur les prochaines sanctions
+                    # Warn the user about upcoming punishment escalations
                     next_config = await db.get_profanity_config(message.guild.id)
                     next_actions = []
                     if stats['total_infractions'] + 1 >= next_config['mute_threshold'] and punishment != "mute":
@@ -170,9 +247,10 @@ class ProfanityFilter(commands.Cog):
 
                     await message.author.send(embed=dm_embed)
                 except discord.Forbidden:
+                    # User has DMs disabled; silently skip
                     pass
 
-            # Envoyer un message dans le channel
+            # Post a temporary warning in the channel (auto-deletes after 10s)
             warning_embed = discord.Embed(
                 title=f"{Emojis.WARNING} Mot interdit détecté",
                 description=f"{message.author.mention}, votre message a été supprimé.",
@@ -194,7 +272,7 @@ class ProfanityFilter(commands.Cog):
             except discord.Forbidden:
                 pass
 
-            # Logger l'infraction
+            # Log the infraction to the moderation log channel
             if config.get('log_infractions', True):
                 log_embed = discord.Embed(
                     title=f"{Emojis.WARNING} Infraction - Mot Interdit",
@@ -203,6 +281,7 @@ class ProfanityFilter(commands.Cog):
                 )
                 log_embed.add_field(name="Utilisateur", value=f"{message.author.mention} ({message.author.id})", inline=True)
                 log_embed.add_field(name="Channel", value=message.channel.mention, inline=True)
+                # Word is wrapped in spoiler tags to avoid displaying it openly in logs
                 log_embed.add_field(name="Mot détecté", value=f"||{word}||", inline=True)
                 log_embed.add_field(name="Sévérité", value=f"{severity}/5", inline=True)
                 log_embed.add_field(name="Sanction", value=punishment.capitalize(), inline=True)
@@ -211,14 +290,21 @@ class ProfanityFilter(commands.Cog):
 
                 await self.log_infraction(message.guild, log_embed)
 
-    # ===============================
-    # COMMANDES DE GESTION
-    # ===============================
+    # =========================================================================
+    # BANNED WORD MANAGEMENT COMMANDS
+    # =========================================================================
 
     @commands.hybrid_group(name="badword", aliases=["bw", "motinterdit"])
     @commands.has_permissions(manage_messages=True)
     async def badword(self, ctx: commands.Context):
-        """Commandes de gestion des mots interdits."""
+        """Command group for managing the banned word list.
+
+        If invoked without a subcommand, displays the help text for available
+        subcommands (add, remove, list, import).
+
+        Args:
+            ctx: The command invocation context.
+        """
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
@@ -230,11 +316,21 @@ class ProfanityFilter(commands.Cog):
     )
     async def badword_add(self, ctx: commands.Context, mot: str,
                           langue: str = "all", severite: int = 2):
-        """Ajoute un mot à la liste des mots interdits."""
+        """Add a word to the guild's banned word list.
+
+        The word is stored in lowercase and associated with a language category
+        and severity level. Higher severity words result in harsher punishments.
+
+        Args:
+            ctx: The command invocation context.
+            mot: The word to ban (stored in lowercase).
+            langue: Language category code (e.g., "fr", "en", "all"). Defaults to "all".
+            severite: Severity level from 1 (mild) to 5 (maximum). Defaults to 2.
+        """
         if severite < 1 or severite > 5:
             return await ctx.send(f"{Emojis.ERROR} La sévérité doit être entre 1 et 5.")
 
-        # Ajouter pour ce serveur spécifiquement
+        # Add the word specifically for this guild
         success = await db.add_banned_word(
             word=mot.lower(),
             language=langue,
@@ -261,7 +357,12 @@ class ProfanityFilter(commands.Cog):
     @badword.command(name="remove", aliases=["supprimer", "rm"])
     @app_commands.describe(mot="Le mot à retirer de la liste")
     async def badword_remove(self, ctx: commands.Context, mot: str):
-        """Retire un mot de la liste des mots interdits du serveur."""
+        """Remove a word from the guild's banned word list.
+
+        Args:
+            ctx: The command invocation context.
+            mot: The word to remove (matched case-insensitively).
+        """
         success = await db.remove_banned_word(mot.lower(), ctx.guild.id)
 
         if success:
@@ -282,13 +383,22 @@ class ProfanityFilter(commands.Cog):
     @badword.command(name="list", aliases=["liste"])
     @app_commands.describe(langue="Filtrer par langue (optionnel)")
     async def badword_list(self, ctx: commands.Context, langue: str = None):
-        """Affiche la liste des mots interdits."""
+        """Display the guild's banned word list, optionally filtered by language.
+
+        Words are grouped by language and displayed with their severity levels.
+        Each word is wrapped in spoiler tags. To prevent embed overflow, at most
+        10 language groups and 15 words per group are shown.
+
+        Args:
+            ctx: The command invocation context.
+            langue: Optional language code to filter by (e.g., "fr", "en").
+        """
         words = await db.get_banned_words(ctx.guild.id, langue)
 
         if not words:
             return await ctx.send(f"{Emojis.INFO} Aucun mot interdit configuré.")
 
-        # Grouper par langue
+        # Group words by their language category
         by_language = {}
         for w in words:
             lang = w['language']
@@ -302,8 +412,10 @@ class ProfanityFilter(commands.Cog):
             color=Colors.PRIMARY
         )
 
+        # Show at most 10 language groups to avoid exceeding embed limits
         for lang, word_list in list(by_language.items())[:10]:
             lang_name = self.language_names.get(lang, lang)
+            # Show at most 15 words per language, with spoiler tags
             words_str = ", ".join(f"||{w['word']}|| ({w['severity']})" for w in word_list[:15])
             if len(word_list) > 15:
                 words_str += f" ... et {len(word_list) - 15} autres"
@@ -320,7 +432,16 @@ class ProfanityFilter(commands.Cog):
     @commands.has_permissions(administrator=True)
     @app_commands.describe(mots="Liste de mots séparés par des virgules")
     async def badword_import(self, ctx: commands.Context, *, mots: str):
-        """[Admin] Importe plusieurs mots d'un coup."""
+        """[Admin] Bulk-import multiple banned words at once.
+
+        Accepts a comma-separated list of words. All words are added with
+        the "all" language category and a default severity of 2. Duplicate
+        words (already in the list) are silently skipped.
+
+        Args:
+            ctx: The command invocation context.
+            mots: Comma-separated list of words to ban.
+        """
         words = [w.strip().lower() for w in mots.split(",") if w.strip()]
 
         added = 0
@@ -336,14 +457,23 @@ class ProfanityFilter(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    # ===============================
-    # COMMANDES DE STATISTIQUES
-    # ===============================
+    # =========================================================================
+    # INFRACTION STATISTICS COMMANDS
+    # =========================================================================
 
     @commands.hybrid_command(name="infractions", aliases=["profanity"])
     @app_commands.describe(membre="Le membre dont voir les infractions")
     async def infractions(self, ctx: commands.Context, membre: Optional[discord.Member] = None):
-        """Affiche les statistiques d'infractions d'un membre."""
+        """Display a member's profanity infraction statistics and recent history.
+
+        Shows total infractions, breakdown by punishment type (warnings, mutes,
+        kicks), ban status, last infraction date, and the 5 most recent
+        infraction entries with detected words (spoilered) and actions taken.
+
+        Args:
+            ctx: The command invocation context.
+            membre: The member whose stats to view. Defaults to the command author.
+        """
         member = membre or ctx.author
 
         stats = await db.get_user_profanity_stats(member.id, ctx.guild.id)
@@ -370,6 +500,7 @@ class ProfanityFilter(commands.Cog):
             history_text = ""
             for h in history:
                 date = datetime.fromisoformat(h['created_at']).strftime("%d/%m")
+                # Words are spoilered to avoid displaying profanity in the embed
                 history_text += f"`{date}` ||{h['word_used']}|| → {h['action_taken']}\n"
             embed.add_field(name="Historique récent", value=history_text, inline=False)
 
@@ -377,7 +508,14 @@ class ProfanityFilter(commands.Cog):
 
     @commands.hybrid_command(name="infractionsleaderboard", aliases=["badusers"])
     async def infractions_leaderboard(self, ctx: commands.Context):
-        """Affiche le classement des utilisateurs avec le plus d'infractions."""
+        """Display a leaderboard of users with the most profanity infractions.
+
+        Shows the top 10 users ranked by total infraction count, with medal
+        emojis for the top 3 positions.
+
+        Args:
+            ctx: The command invocation context.
+        """
         leaderboard = await db.get_profanity_leaderboard(ctx.guild.id, 10)
 
         if not leaderboard:
@@ -389,7 +527,7 @@ class ProfanityFilter(commands.Cog):
         )
 
         lines = []
-        medals = ["", "", ""]
+        medals = ["", "", ""]  # Gold, silver, bronze for top 3
         for i, data in enumerate(leaderboard, 1):
             member = ctx.guild.get_member(data['user_id'])
             name = member.display_name if member else f"Utilisateur #{data['user_id']}"
@@ -403,7 +541,15 @@ class ProfanityFilter(commands.Cog):
     @commands.has_permissions(administrator=True)
     @app_commands.describe(membre="Le membre dont réinitialiser les infractions")
     async def reset_infractions(self, ctx: commands.Context, membre: discord.Member):
-        """[Admin] Réinitialise les infractions d'un membre."""
+        """[Admin] Reset all profanity infractions for a member.
+
+        Clears the member's entire infraction history, effectively giving them
+        a clean slate. Requires the ``administrator`` permission.
+
+        Args:
+            ctx: The command invocation context.
+            membre: The member whose infractions should be reset.
+        """
         await db.reset_user_profanity_stats(membre.id, ctx.guild.id)
 
         embed = discord.Embed(
@@ -413,14 +559,22 @@ class ProfanityFilter(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    # ===============================
-    # CONFIGURATION DES SANCTIONS
-    # ===============================
+    # =========================================================================
+    # PUNISHMENT CONFIGURATION COMMANDS
+    # =========================================================================
 
     @commands.hybrid_group(name="profanityconfig", aliases=["pconfig"])
     @commands.has_permissions(administrator=True)
     async def profanity_config(self, ctx: commands.Context):
-        """Configuration du système de filtrage des mots interdits."""
+        """Command group for configuring the profanity filter system.
+
+        When invoked without a subcommand, displays the current configuration
+        including enabled state, message deletion setting, DM preference,
+        punishment thresholds, and mute duration.
+
+        Args:
+            ctx: The command invocation context.
+        """
         if ctx.invoked_subcommand is None:
             config = await db.get_profanity_config(ctx.guild.id)
 
@@ -445,7 +599,14 @@ class ProfanityFilter(commands.Cog):
     @profanity_config.command(name="enable")
     @app_commands.describe(etat="on/off")
     async def pconfig_enable(self, ctx: commands.Context, etat: str):
-        """Active ou désactive le filtre."""
+        """Enable or disable the profanity filter for this guild.
+
+        Accepts various truthy/falsy values: on/off, true/false, 1/0, oui/non, yes/no.
+
+        Args:
+            ctx: The command invocation context.
+            etat: The desired state ("on"/"off" or equivalent).
+        """
         enabled = etat.lower() in ['on', 'true', '1', 'oui', 'yes']
         await db.update_profanity_config(ctx.guild.id, enabled=1 if enabled else 0)
 
@@ -461,7 +622,17 @@ class ProfanityFilter(commands.Cog):
         nombre="Nombre d'infractions avant cette sanction"
     )
     async def pconfig_threshold(self, ctx: commands.Context, type: str, nombre: int):
-        """Configure les seuils de sanction."""
+        """Configure the infraction count threshold for a specific punishment type.
+
+        Sets how many infractions a user must accumulate before the specified
+        punishment is applied. The thresholds should be ordered:
+        warn < mute < kick < ban.
+
+        Args:
+            ctx: The command invocation context.
+            type: The punishment type to configure ("warn", "mute", "kick", or "ban").
+            nombre: The number of infractions required to trigger this punishment.
+        """
         type = type.lower()
         if type not in ['warn', 'mute', 'kick', 'ban']:
             return await ctx.send(f"{Emojis.ERROR} Type invalide. Utilisez: warn, mute, kick, ban")
@@ -469,6 +640,7 @@ class ProfanityFilter(commands.Cog):
         if nombre < 1:
             return await ctx.send(f"{Emojis.ERROR} Le nombre doit être positif.")
 
+        # Dynamically build the keyword argument for the database update
         await db.update_profanity_config(ctx.guild.id, **{f"{type}_threshold": nombre})
 
         embed = discord.Embed(
@@ -481,10 +653,20 @@ class ProfanityFilter(commands.Cog):
     @profanity_config.command(name="muteduration")
     @app_commands.describe(minutes="Durée du mute en minutes")
     async def pconfig_muteduration(self, ctx: commands.Context, minutes: int):
-        """Configure la durée du mute."""
-        if minutes < 1 or minutes > 40320:  # Max 28 jours
+        """Configure the duration of mute punishments (in minutes).
+
+        The duration is stored in seconds internally. Discord's maximum
+        timeout is 28 days (40,320 minutes).
+
+        Args:
+            ctx: The command invocation context.
+            minutes: Mute duration in minutes (1 to 40320).
+        """
+        # Discord timeout maximum is 28 days (40320 minutes)
+        if minutes < 1 or minutes > 40320:
             return await ctx.send(f"{Emojis.ERROR} La durée doit être entre 1 et 40320 minutes.")
 
+        # Convert minutes to seconds for internal storage
         await db.update_profanity_config(ctx.guild.id, mute_duration=minutes * 60)
 
         embed = discord.Embed(
@@ -497,7 +679,15 @@ class ProfanityFilter(commands.Cog):
     @profanity_config.command(name="dm")
     @app_commands.describe(etat="on/off - Envoyer un DM aux utilisateurs")
     async def pconfig_dm(self, ctx: commands.Context, etat: str):
-        """Active/désactive les DMs aux utilisateurs."""
+        """Enable or disable sending DM notifications to users on infractions.
+
+        When enabled, users receive a DM with details about their infraction,
+        the applied punishment, and upcoming punishment thresholds.
+
+        Args:
+            ctx: The command invocation context.
+            etat: The desired state ("on"/"off" or equivalent).
+        """
         enabled = etat.lower() in ['on', 'true', '1', 'oui', 'yes']
         await db.update_profanity_config(ctx.guild.id, dm_user=1 if enabled else 0)
 
@@ -509,4 +699,11 @@ class ProfanityFilter(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
+    """Entry point for loading this cog into the bot.
+
+    Called by ``bot.load_extension('cogs.profanity_filter')``.
+
+    Args:
+        bot: The Discord bot instance to attach the cog to.
+    """
     await bot.add_cog(ProfanityFilter(bot))

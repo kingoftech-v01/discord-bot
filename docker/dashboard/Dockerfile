@@ -1,4 +1,12 @@
 # Django Dashboard Dockerfile
+#
+# Builds a production-ready container for the Django web dashboard.
+# Uses Gunicorn as the WSGI server with 4 workers and 2 threads each.
+# Static files are pre-collected at build time and served by Nginx in production.
+# The container runs as a non-root user for security.
+#
+# Build context should be the project root (not this directory).
+# Usage: docker build -f docker/dashboard/Dockerfile -t discord-dashboard .
 FROM python:3.11-slim
 
 # Set environment variables

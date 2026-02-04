@@ -1,5 +1,26 @@
 # Docker Compose - Production Configuration
-# Usage: docker-compose -f docker-compose.prod.yml up -d --build
+#
+# Full production stack: Bot + Dashboard + PostgreSQL + Redis + Nginx.
+# All services run with resource limits, health checks, and auto-restart.
+# The dashboard is served via Gunicorn behind an Nginx reverse proxy.
+#
+# Architecture:
+#   Internet -> Nginx (ports 80/443) -> Dashboard (Gunicorn, port 8000)
+#                                    -> Static files (served directly by Nginx)
+#   Bot <-> PostgreSQL <-> Dashboard
+#   Bot <-> Redis <-> Dashboard
+#
+# Usage:
+#   docker-compose -f docker-compose.prod.yml up -d --build       # Start
+#   docker-compose -f docker-compose.prod.yml exec dashboard python manage.py migrate
+#   docker-compose -f docker-compose.prod.yml exec dashboard python manage.py collectstatic --noinput
+#   docker-compose -f docker-compose.prod.yml logs -f              # Follow logs
+#   docker-compose -f docker-compose.prod.yml down                 # Stop
+#
+# Prerequisites:
+#   - .env file with all production secrets (see .env.example)
+#   - TLS certificates in docker/nginx/ssl/ (for HTTPS)
+#   - See docs/DOCKER.md for full deployment guide
 
 version: '3.8'
 

@@ -1,4 +1,11 @@
 # Discord Bot Dockerfile
+#
+# Builds a minimal container for the Discord bot process.
+# Uses Python 3.11-slim as base, installs only required system and Python
+# dependencies, and runs the bot as a non-root user for security.
+#
+# Build context should be the project root (not this directory).
+# Usage: docker build -f docker/bot/Dockerfile -t discord-bot .
 FROM python:3.11-slim
 
 # Set environment variables

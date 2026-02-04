@@ -1,5 +1,19 @@
 """
-Cog pour les messages de bienvenue et les événements du serveur.
+Welcome and goodbye messages cog for the Discord bot.
+
+Handles automatic greeting and farewell messages when members join or leave
+the server. Also manages a daily scheduled greeting message sent at the
+configured hour. Server administrators can customize the welcome/goodbye
+channel, welcome message template (with placeholder variables), and goodbye
+message template through dedicated commands.
+
+Key features:
+- Customizable welcome messages with ``{user}``, ``{server}``, and
+  ``{member_count}`` placeholders.
+- Customizable goodbye messages with ``{user}`` and ``{server}`` placeholders.
+- Optional DM sent to new members upon joining.
+- Daily scheduled greeting message via APScheduler.
+- Test command to preview the welcome message without a real join event.
 """
 import discord
 from discord.ext import commands
@@ -13,23 +27,47 @@ from utils.database import db
 
 
 class Welcome(commands.Cog):
-    """Gestion des messages de bienvenue, départ et événements programmés."""
+    """Cog for welcome/goodbye messages and daily scheduled greetings.
+
+    Listens for member join and leave events to send customizable
+    notification embeds to a configured channel. Also runs a daily
+    scheduled job that posts a morning greeting at the configured hour.
+
+    Attributes:
+        bot: The bot instance this cog is attached to.
+        scheduler: APScheduler instance managing the daily message cron job.
+    """
 
     def __init__(self, bot: commands.Bot):
+        """Initialize the Welcome cog with the APScheduler instance.
+
+        Args:
+            bot: The bot instance to bind this cog to.
+        """
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
 
     async def cog_load(self):
-        """Démarrage du scheduler."""
+        """Start the APScheduler when the cog is loaded.
+
+        Registers a cron job that fires ``send_daily_message`` at the hour
+        defined by the ``SEND_HOUR`` configuration constant.
+        """
         self.scheduler.add_job(self.send_daily_message, 'cron', hour=SEND_HOUR)
         self.scheduler.start()
 
     async def cog_unload(self):
-        """Arrêt du scheduler."""
+        """Shut down the APScheduler when the cog is unloaded."""
         self.scheduler.shutdown()
 
     async def send_daily_message(self):
-        """Envoie un message quotidien."""
+        """Send a daily greeting message to every guild's configured channel.
+
+        Iterates over all guilds the bot is in, looks up the welcome channel
+        (falling back to ``DEFAULT_CHANNEL_ID``), and posts a simple
+        "good morning" embed. Silently skips guilds where the channel is
+        missing or the bot lacks send permissions.
+        """
         for guild in self.bot.guilds:
             config = await db.get_guild_config(guild.id)
             channel_id = config.get('welcome_channel_id') or DEFAULT_CHANNEL_ID
@@ -48,7 +86,20 @@ class Welcome(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        """Envoie un message de bienvenue."""
+        """Send a welcome message when a new (non-bot) member joins the server.
+
+        Looks up the guild's welcome channel and message template from the
+        database, replaces placeholder variables, and posts a welcome embed.
+        Also attempts to send a private DM welcome to the new member.
+
+        Placeholder variables supported in the welcome message template:
+        - ``{user}`` -- replaced with the member's mention
+        - ``{server}`` -- replaced with the guild name
+        - ``{member_count}`` -- replaced with the current member count
+
+        Args:
+            member: The member who just joined the guild.
+        """
         if member.bot:
             return
 
@@ -62,7 +113,7 @@ class Welcome(commands.Cog):
         if not channel:
             return
 
-        # Préparer le message
+        # Build the welcome message by replacing template placeholders
         welcome_msg = config.get('welcome_message', 'Bienvenue {user} sur {server}!')
         welcome_msg = welcome_msg.replace('{user}', member.mention)
         welcome_msg = welcome_msg.replace('{server}', member.guild.name)
@@ -83,7 +134,7 @@ class Welcome(commands.Cog):
         except discord.Forbidden:
             pass
 
-        # Envoyer un DM de bienvenue (optionnel)
+        # Attempt to send a private DM welcome (optional; silently fails if DMs are disabled)
         try:
             dm_embed = discord.Embed(
                 title=f"Bienvenue sur {member.guild.name}!",
@@ -94,11 +145,22 @@ class Welcome(commands.Cog):
             dm_embed.set_thumbnail(url=member.guild.icon.url if member.guild.icon else None)
             await member.send(embed=dm_embed)
         except discord.Forbidden:
-            pass  # L'utilisateur n'accepte pas les DMs
+            pass  # The user has DMs disabled -- nothing we can do
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        """Envoie un message de départ."""
+        """Send a goodbye message when a (non-bot) member leaves the server.
+
+        Uses the guild's configured goodbye message template with placeholder
+        variables and posts it to the welcome channel.
+
+        Placeholder variables supported in the goodbye message template:
+        - ``{user}`` -- replaced with the member's username string
+        - ``{server}`` -- replaced with the guild name
+
+        Args:
+            member: The member who just left or was removed from the guild.
+        """
         if member.bot:
             return
 
@@ -133,7 +195,12 @@ class Welcome(commands.Cog):
     @commands.has_permissions(administrator=True)
     @app_commands.describe(channel="Le channel pour les messages de bienvenue")
     async def setwelcome(self, ctx: commands.Context, channel: discord.TextChannel):
-        """Configure le channel de bienvenue."""
+        """Set the channel where welcome and goodbye messages are sent (admin only).
+
+        Args:
+            ctx: The invocation context.
+            channel: The text channel to designate as the welcome channel.
+        """
         await db.update_guild_config(ctx.guild.id, welcome_channel_id=channel.id)
 
         embed = discord.Embed(
@@ -147,9 +214,20 @@ class Welcome(commands.Cog):
     @commands.has_permissions(administrator=True)
     @app_commands.describe(message="Le message de bienvenue ({user}, {server}, {member_count})")
     async def setwelcomemsg(self, ctx: commands.Context, *, message: str):
-        """Configure le message de bienvenue personnalisé."""
+        """Set a custom welcome message template (admin only).
+
+        The message may contain placeholder variables that are replaced at
+        send time: ``{user}`` (member mention), ``{server}`` (guild name),
+        ``{member_count}`` (current member count). A preview with the
+        placeholders filled in is shown after saving.
+
+        Args:
+            ctx: The invocation context.
+            message: The welcome message template string.
+        """
         await db.update_guild_config(ctx.guild.id, welcome_message=message)
 
+        # Generate a preview by filling in the template with current context
         preview = message.replace('{user}', ctx.author.mention)
         preview = preview.replace('{server}', ctx.guild.name)
         preview = preview.replace('{member_count}', str(ctx.guild.member_count))
@@ -166,9 +244,18 @@ class Welcome(commands.Cog):
     @commands.has_permissions(administrator=True)
     @app_commands.describe(message="Le message de départ ({user}, {server})")
     async def setgoodbyemsg(self, ctx: commands.Context, *, message: str):
-        """Configure le message de départ personnalisé."""
+        """Set a custom goodbye message template (admin only).
+
+        Supports ``{user}`` (member username) and ``{server}`` (guild name)
+        placeholders. A preview is shown after saving.
+
+        Args:
+            ctx: The invocation context.
+            message: The goodbye message template string.
+        """
         await db.update_guild_config(ctx.guild.id, goodbye_message=message)
 
+        # Generate a preview by filling in the template with current context
         preview = message.replace('{user}', str(ctx.author))
         preview = preview.replace('{server}', ctx.guild.name)
 
@@ -183,8 +270,16 @@ class Welcome(commands.Cog):
     @commands.hybrid_command(name="testwelcome")
     @commands.has_permissions(administrator=True)
     async def testwelcome(self, ctx: commands.Context):
-        """Teste le message de bienvenue."""
-        # Simuler un membre qui rejoint
+        """Preview the welcome message without a real member join (admin only).
+
+        Simulates a member joining by using the command author's information
+        to fill in the welcome message template placeholders. The embed title
+        is prefixed with ``[TEST]`` to distinguish it from real welcome messages.
+
+        Args:
+            ctx: The invocation context.
+        """
+        # Simulate a join event using the invoking user's data
         config = await db.get_guild_config(ctx.guild.id)
 
         welcome_msg = config.get('welcome_message', 'Bienvenue {user} sur {server}!')
@@ -206,4 +301,9 @@ class Welcome(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
+    """Load the Welcome cog into the bot.
+
+    Args:
+        bot: The bot instance to register the cog with.
+    """
     await bot.add_cog(Welcome(bot))

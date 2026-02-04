@@ -61,7 +61,7 @@ Complete reference for all configuration options.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DJANGO_SECRET_KEY` | Django secret key | - |
-| `DEBUG` | Debug mode | `True` |
+| `DJANGO_DEBUG` | Debug mode (set to `True` only for local dev) | `False` |
 | `ALLOWED_HOSTS` | Comma-separated hosts | `localhost,127.0.0.1` |
 | `DASHBOARD_URL` | Base URL for OAuth | `http://localhost:8000` |
 
@@ -198,11 +198,12 @@ Welcome {user} to {server}! You are member #{member_count}!
 
 ### Security
 
-1. Never commit `.env` file
-2. Use strong, unique secrets
-3. Enable `DEBUG=False` in production
-4. Use HTTPS in production
-5. Rotate tokens periodically
+1. Never commit `.env` file (it is in `.gitignore`)
+2. Use strong, unique secrets (generate `DJANGO_SECRET_KEY` with `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`)
+3. Keep `DJANGO_DEBUG=False` in production (this is the default)
+4. Use HTTPS in production (HSTS is auto-enabled when DEBUG=False)
+5. Rotate tokens periodically (Discord bot token, Django secret key, API keys)
+6. See [SECURITY.md](SECURITY.md) for the full security documentation
 
 ### Performance
 

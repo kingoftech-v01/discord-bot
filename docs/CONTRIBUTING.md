@@ -243,11 +243,12 @@ async def test_add_xp():
 
 ### Before Submitting
 
-- [ ] Tests pass locally
-- [ ] Code follows style guidelines
-- [ ] Documentation updated
+- [ ] Tests pass locally (`pytest`)
+- [ ] Code follows style guidelines (`flake8`, `black --check`)
+- [ ] Documentation updated (docstrings + docs/ if needed)
 - [ ] Commit messages follow convention
 - [ ] No merge conflicts
+- [ ] Security checklist reviewed (see [SECURITY.md](SECURITY.md#security-checklist-for-contributors))
 
 ### PR Description Template
 

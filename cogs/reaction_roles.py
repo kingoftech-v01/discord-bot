@@ -1,5 +1,21 @@
 """
-Cog pour la gestion des reaction roles (auto-attribution de rôles).
+Reaction roles cog for the Discord bot.
+
+Enables server administrators to set up self-assignable roles via emoji
+reactions on designated messages. When a member reacts with a configured
+emoji, the corresponding role is automatically granted; when they remove
+the reaction, the role is revoked.
+
+The cog provides commands to:
+- Add/remove reaction-role mappings on existing messages.
+- List all configured reaction roles for the server.
+- Create new embed messages specifically for reaction-role menus.
+- Build interactive role menus via a Discord modal (``rolemenu``).
+
+Reaction-role mappings are persisted in the database so they survive bot
+restarts. The cog listens for raw reaction events (``on_raw_reaction_add``
+and ``on_raw_reaction_remove``) to handle reactions on any message, even
+those not in the bot's message cache.
 """
 import discord
 from discord.ext import commands
@@ -11,22 +27,58 @@ from utils.database import db
 
 
 class ReactionRoleView(discord.ui.View):
-    """Vue persistante pour les reaction roles avec boutons."""
+    """Persistent UI view for button-based reaction roles.
+
+    This is a placeholder view with no timeout, intended for future
+    button-based role assignment. Currently unused but available for
+    extension.
+
+    Attributes:
+        bot: The bot instance this view is associated with.
+    """
 
     def __init__(self, bot: commands.Bot):
+        """Initialize the persistent view.
+
+        Args:
+            bot: The bot instance for accessing guild and role data.
+        """
         super().__init__(timeout=None)
         self.bot = bot
 
 
 class ReactionRoles(commands.Cog):
-    """Système de reaction roles pour l'auto-attribution de rôles."""
+    """Cog for managing emoji-based self-assignable roles.
+
+    Listens for raw reaction add/remove events and maps them to role
+    grant/revoke operations using the database-stored reaction-role
+    configuration. Provides administrator commands for managing mappings.
+
+    Attributes:
+        bot: The bot instance this cog is attached to.
+    """
 
     def __init__(self, bot: commands.Bot):
+        """Initialize the ReactionRoles cog.
+
+        Args:
+            bot: The bot instance to bind this cog to.
+        """
         self.bot = bot
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        """Gère l'ajout de réactions pour attribuer des rôles."""
+        """Grant a role when a user adds a reaction to a configured message.
+
+        Uses raw reaction events so it works even for messages not in the
+        bot's internal cache. Looks up the emoji/message combination in the
+        database and, if a mapping exists, adds the corresponding role to
+        the reacting member.
+
+        Args:
+            payload: The raw reaction event data containing message ID,
+                emoji, guild ID, and the member who reacted.
+        """
         if payload.member.bot:
             return
 
@@ -47,15 +99,26 @@ class ReactionRoles(commands.Cog):
         try:
             await payload.member.add_roles(role, reason="Reaction Role")
         except discord.Forbidden:
-            pass
+            pass  # Bot lacks permission to assign this role
 
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
-        """Gère le retrait de réactions pour retirer des rôles."""
+        """Revoke a role when a user removes their reaction from a configured message.
+
+        Since ``on_raw_reaction_remove`` does not provide a ``member``
+        attribute, the member is fetched from the guild cache using the
+        user ID from the payload.
+
+        Args:
+            payload: The raw reaction event data containing message ID,
+                emoji, guild ID, and the user ID of the person who
+                removed their reaction.
+        """
         guild = self.bot.get_guild(payload.guild_id)
         if not guild:
             return
 
+        # Raw reaction remove events don't include the member object
         member = guild.get_member(payload.user_id)
         if not member or member.bot:
             return
@@ -73,12 +136,18 @@ class ReactionRoles(commands.Cog):
         try:
             await member.remove_roles(role, reason="Reaction Role")
         except discord.Forbidden:
-            pass
+            pass  # Bot lacks permission to remove this role
 
     @commands.hybrid_group(name="reactionrole", aliases=["rr"])
     @commands.has_permissions(administrator=True)
     async def reactionrole(self, ctx: commands.Context):
-        """Commandes pour gérer les reaction roles."""
+        """Command group for managing reaction roles (admin only).
+
+        When invoked without a subcommand, shows the group's help page.
+
+        Args:
+            ctx: The invocation context.
+        """
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
@@ -89,13 +158,25 @@ class ReactionRoles(commands.Cog):
         role="Le rôle à attribuer"
     )
     async def rr_add(self, ctx: commands.Context, message_id: str, emoji: str, role: discord.Role):
-        """Ajoute un reaction role à un message existant."""
+        """Add a reaction-role mapping to an existing message.
+
+        Searches all text channels in the guild to locate the target message,
+        validates that the role is below the bot's highest role in the
+        hierarchy (so it can be assigned), adds the emoji reaction to the
+        message, and persists the mapping in the database.
+
+        Args:
+            ctx: The invocation context.
+            message_id: The snowflake ID of the target message (as a string).
+            emoji: The emoji to react with (Unicode or custom Discord emoji).
+            role: The role to assign when users react with the emoji.
+        """
         try:
             msg_id = int(message_id)
         except ValueError:
             return await ctx.send(f"{Emojis.ERROR} ID de message invalide.")
 
-        # Vérifier si le message existe
+        # Search all text channels for the target message
         message = None
         for channel in ctx.guild.text_channels:
             try:
@@ -109,17 +190,17 @@ class ReactionRoles(commands.Cog):
         if not message:
             return await ctx.send(f"{Emojis.ERROR} Message introuvable.")
 
-        # Vérifier si le rôle est attribuable
+        # Ensure the role is below the bot's highest role in the hierarchy
         if role >= ctx.guild.me.top_role:
             return await ctx.send(f"{Emojis.ERROR} Ce rôle est trop haut dans la hiérarchie.")
 
-        # Ajouter la réaction au message
+        # Add the emoji reaction to the target message
         try:
             await message.add_reaction(emoji)
         except discord.HTTPException:
             return await ctx.send(f"{Emojis.ERROR} Impossible d'ajouter cette réaction.")
 
-        # Sauvegarder en base
+        # Persist the mapping in the database
         await db.add_reaction_role(ctx.guild.id, msg_id, message.channel.id, emoji, role.id)
 
         embed = discord.Embed(
@@ -132,7 +213,16 @@ class ReactionRoles(commands.Cog):
     @reactionrole.command(name="remove")
     @app_commands.describe(message_id="L'ID du message", emoji="L'emoji à retirer")
     async def rr_remove(self, ctx: commands.Context, message_id: str, emoji: str):
-        """Retire un reaction role d'un message."""
+        """Remove a reaction-role mapping from a message.
+
+        Deletes the mapping from the database. Note: does not remove the
+        existing reaction from the message itself.
+
+        Args:
+            ctx: The invocation context.
+            message_id: The snowflake ID of the target message (as a string).
+            emoji: The emoji whose mapping should be removed.
+        """
         try:
             msg_id = int(message_id)
         except ValueError:
@@ -149,7 +239,14 @@ class ReactionRoles(commands.Cog):
 
     @reactionrole.command(name="list")
     async def rr_list(self, ctx: commands.Context):
-        """Affiche tous les reaction roles du serveur."""
+        """List all reaction-role mappings configured for this server.
+
+        Displays up to 25 mappings (Discord embed field limit), each showing
+        the emoji, the role it maps to, the channel, and the message ID.
+
+        Args:
+            ctx: The invocation context.
+        """
         reaction_roles = await db.get_all_reaction_roles(ctx.guild.id)
 
         if not reaction_roles:
@@ -160,7 +257,7 @@ class ReactionRoles(commands.Cog):
             color=Colors.PRIMARY
         )
 
-        for rr in reaction_roles[:25]:  # Max 25 fields
+        for rr in reaction_roles[:25]:  # Discord embeds support max 25 fields
             role = ctx.guild.get_role(rr['role_id'])
             channel = ctx.guild.get_channel(rr['channel_id'])
             role_name = role.name if role else "Rôle supprimé"
@@ -176,7 +273,18 @@ class ReactionRoles(commands.Cog):
     @reactionrole.command(name="create")
     @app_commands.describe(titre="Titre de l'embed", description="Description de l'embed")
     async def rr_create(self, ctx: commands.Context, titre: str, *, description: str = None):
-        """Crée un nouveau message pour les reaction roles."""
+        """Create a new embed message to be used as a reaction-role menu.
+
+        Posts an embed with the given title and description, then sends a
+        temporary follow-up message with the new message's ID and
+        instructions for adding reaction-role mappings to it.
+
+        Args:
+            ctx: The invocation context.
+            titre: The title for the reaction-role embed.
+            description: Optional description text. Defaults to a generic
+                instruction to react for roles.
+        """
         embed = discord.Embed(
             title=titre,
             description=description or "Réagissez pour obtenir des rôles!",
@@ -186,6 +294,7 @@ class ReactionRoles(commands.Cog):
 
         message = await ctx.send(embed=embed)
 
+        # Send a temporary instruction message that auto-deletes after 30 seconds
         info_embed = discord.Embed(
             title=f"{Emojis.SUCCESS} Message Créé",
             description=f"ID du message: `{message.id}`\n\nUtilisez `!reactionrole add {message.id} [emoji] [role]` pour ajouter des reaction roles.",
@@ -197,9 +306,30 @@ class ReactionRoles(commands.Cog):
     @commands.has_permissions(administrator=True)
     @app_commands.describe(titre="Titre du menu")
     async def rolemenu(self, ctx: commands.Context, *, titre: str = "Menu de Rôles"):
-        """Crée un menu interactif de rôles avec des boutons."""
+        """Create an interactive role menu via a Discord modal (admin only, slash-only).
+
+        Opens a modal dialog where the administrator enters emoji-to-role
+        mappings (one per line in ``emoji:@role`` format). On submission,
+        the bot creates a reaction-role embed, adds all the emoji reactions,
+        and persists the mappings in the database.
+
+        This command only works as a slash command because it requires
+        ``ctx.interaction`` to present the modal.
+
+        Args:
+            ctx: The invocation context (must be a slash command interaction).
+            titre: The title for the role menu embed. Defaults to
+                ``"Menu de Roles"``.
+        """
 
         class RoleMenuModal(discord.ui.Modal, title="Configurer le Menu de Rôles"):
+            """Modal for configuring emoji-to-role mappings.
+
+            The user enters one mapping per line in the format
+            ``emoji:@role``. The modal parses each line, resolves the
+            role mention to a guild role, and collects valid pairs.
+            """
+
             roles_input = discord.ui.TextInput(
                 label="Rôles (emoji:@role par ligne)",
                 style=discord.TextStyle.paragraph,
@@ -208,6 +338,11 @@ class ReactionRoles(commands.Cog):
             )
 
             async def on_submit(modal_self, interaction: discord.Interaction):
+                """Process the modal submission and create the role menu.
+
+                Args:
+                    interaction: The modal submission interaction.
+                """
                 lines = modal_self.roles_input.value.strip().split('\n')
                 roles_config = []
 
@@ -220,7 +355,7 @@ class ReactionRoles(commands.Cog):
                     emoji = parts[0].strip()
                     role_mention = parts[1].strip()
 
-                    # Extraire l'ID du rôle
+                    # Extract the role ID from the mention format <@&ID>
                     role_id = None
                     if role_mention.startswith('<@&') and role_mention.endswith('>'):
                         try:
@@ -240,7 +375,7 @@ class ReactionRoles(commands.Cog):
                     )
                     return
 
-                # Créer l'embed
+                # Build the role menu embed with emoji-role pairs
                 embed = discord.Embed(
                     title=titre,
                     description="\n".join(f"{emoji} - {role.mention}" for emoji, role in roles_config),
@@ -250,13 +385,13 @@ class ReactionRoles(commands.Cog):
 
                 message = await ctx.channel.send(embed=embed)
 
-                # Ajouter les réactions et sauvegarder
+                # Add reactions and persist each mapping to the database
                 for emoji, role in roles_config:
                     try:
                         await message.add_reaction(emoji)
                         await db.add_reaction_role(ctx.guild.id, message.id, ctx.channel.id, emoji, role.id)
                     except discord.HTTPException:
-                        continue
+                        continue  # Skip emojis the bot cannot use
 
                 await interaction.response.send_message(
                     f"{Emojis.SUCCESS} Menu de rôles créé avec succès!",
@@ -267,4 +402,9 @@ class ReactionRoles(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
+    """Load the ReactionRoles cog into the bot.
+
+    Args:
+        bot: The bot instance to register the cog with.
+    """
     await bot.add_cog(ReactionRoles(bot))

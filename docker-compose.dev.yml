@@ -1,5 +1,17 @@
 # Docker Compose - Development Configuration
-# Usage: docker-compose -f docker-compose.dev.yml up --build
+#
+# Starts the bot, dashboard, and Redis for local development.
+# Source code is mounted as volumes for hot-reload (no rebuild needed on code changes).
+# The bot and dashboard share the SQLite database via ./data/bot.db.
+#
+# Usage:
+#   docker-compose -f docker-compose.dev.yml up --build      # Start all services
+#   docker-compose -f docker-compose.dev.yml logs -f bot      # Follow bot logs
+#   docker-compose -f docker-compose.dev.yml down             # Stop all services
+#
+# Prerequisites:
+#   - Copy .env.example to .env and fill in DISCORD_TOKEN (minimum)
+#   - Docker and Docker Compose v2 installed
 
 version: '3.8'
 

@@ -435,16 +435,39 @@ class TransferModal(discord.ui.Modal, title="Transférer le Ticket"):
 
 
 class Tickets(commands.Cog):
-    """Système de tickets de support."""
+    """Discord cog providing a full support ticket system.
+
+    On initialization, registers the persistent views (``TicketView`` and
+    ``TicketControlView``) with the bot so that button interactions continue
+    to work after bot restarts.
+
+    Available commands (under the ``ticket`` group):
+        - setup: Send the ticket panel embed with the "Open a Ticket" button.
+        - close: Close the current ticket (command alternative to the button).
+        - add: Add a member to the current ticket channel.
+        - remove: Remove a member from the current ticket channel.
+        - rename: Rename the current ticket channel.
+
+    Attributes:
+        bot: The Discord bot instance.
+    """
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # Register persistent views so button interactions work after restart
         bot.add_view(TicketView(bot))
         bot.add_view(TicketControlView(bot))
 
     @commands.hybrid_group(name="ticket")
     async def ticket(self, ctx: commands.Context):
-        """Commandes de gestion des tickets."""
+        """Parent command group for ticket management.
+
+        If invoked without a subcommand, displays the help text for available
+        ticket subcommands.
+
+        Args:
+            ctx: The command invocation context.
+        """
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
@@ -452,7 +475,16 @@ class Tickets(commands.Cog):
     @commands.has_permissions(administrator=True)
     @app_commands.describe(channel="Le channel où envoyer le panel de tickets")
     async def ticket_setup(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
-        """Configure le système de tickets."""
+        """[Admin] Send the ticket panel with the "Open a Ticket" button.
+
+        Sends an instructional embed with a persistent button to the specified
+        channel (or the current channel if none is specified). Users can click
+        this button at any time to create a new support ticket.
+
+        Args:
+            ctx: The command invocation context.
+            channel: The channel to send the panel to. Defaults to the current channel.
+        """
         target_channel = channel or ctx.channel
 
         embed = discord.Embed(
@@ -474,11 +506,20 @@ class Tickets(commands.Cog):
 
     @ticket.command(name="close")
     async def ticket_close(self, ctx: commands.Context):
-        """Ferme le ticket actuel."""
+        """Close the current ticket channel (command alternative to the close button).
+
+        Must be used inside a ticket channel. Only the ticket creator or users
+        with ``manage_messages`` permission can close a ticket. The channel is
+        deleted after a 5-second countdown.
+
+        Args:
+            ctx: The command invocation context.
+        """
         ticket = await db.get_ticket_by_channel(ctx.channel.id)
         if not ticket:
             return await ctx.send(f"{Emojis.ERROR} Cette commande doit être utilisée dans un ticket.")
 
+        # Permission check: only ticket creator or staff can close
         if ctx.author.id != ticket['user_id'] and not ctx.author.guild_permissions.manage_messages:
             return await ctx.send(f"{Emojis.ERROR} Vous n'avez pas la permission de fermer ce ticket.")
 
@@ -495,7 +536,15 @@ class Tickets(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     @app_commands.describe(membre="Le membre à ajouter au ticket")
     async def ticket_add(self, ctx: commands.Context, membre: discord.Member):
-        """Ajoute un membre au ticket."""
+        """Add a member to the current ticket channel.
+
+        Grants the specified member read and send permissions in the ticket
+        channel. Must be used inside a ticket channel. Requires ``manage_messages``.
+
+        Args:
+            ctx: The command invocation context.
+            membre: The member to add to the ticket.
+        """
         ticket = await db.get_ticket_by_channel(ctx.channel.id)
         if not ticket:
             return await ctx.send(f"{Emojis.ERROR} Cette commande doit être utilisée dans un ticket.")
@@ -507,14 +556,25 @@ class Tickets(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     @app_commands.describe(membre="Le membre à retirer du ticket")
     async def ticket_remove(self, ctx: commands.Context, membre: discord.Member):
-        """Retire un membre du ticket."""
+        """Remove a member from the current ticket channel.
+
+        Removes the member's permission overwrite, revoking their access.
+        The ticket creator cannot be removed. Must be used inside a ticket
+        channel. Requires ``manage_messages``.
+
+        Args:
+            ctx: The command invocation context.
+            membre: The member to remove from the ticket.
+        """
         ticket = await db.get_ticket_by_channel(ctx.channel.id)
         if not ticket:
             return await ctx.send(f"{Emojis.ERROR} Cette commande doit être utilisée dans un ticket.")
 
+        # Prevent removing the ticket creator
         if membre.id == ticket['user_id']:
             return await ctx.send(f"{Emojis.ERROR} Vous ne pouvez pas retirer le créateur du ticket.")
 
+        # Remove all permission overwrites for this member (reverts to default)
         await ctx.channel.set_permissions(membre, overwrite=None)
         await ctx.send(f"{Emojis.SUCCESS} {membre.mention} a été retiré du ticket.")
 
@@ -522,7 +582,15 @@ class Tickets(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     @app_commands.describe(nom="Le nouveau nom du ticket")
     async def ticket_rename(self, ctx: commands.Context, *, nom: str):
-        """Renomme le ticket."""
+        """Rename the current ticket channel.
+
+        Changes the channel name to ``ticket-{nom}``. Must be used inside a
+        ticket channel. Requires ``manage_messages`` permission.
+
+        Args:
+            ctx: The command invocation context.
+            nom: The new name suffix for the ticket channel.
+        """
         ticket = await db.get_ticket_by_channel(ctx.channel.id)
         if not ticket:
             return await ctx.send(f"{Emojis.ERROR} Cette commande doit être utilisée dans un ticket.")
@@ -532,4 +600,11 @@ class Tickets(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
+    """Entry point for loading this cog into the bot.
+
+    Called by ``bot.load_extension('cogs.tickets')``.
+
+    Args:
+        bot: The Discord bot instance to attach the cog to.
+    """
     await bot.add_cog(Tickets(bot))

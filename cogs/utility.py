@@ -530,14 +530,14 @@ class Utility(commands.Cog):
     @commands.hybrid_command(name="calc", aliases=["calculer", "math"])
     @app_commands.describe(expression="L'expression mathématique")
     async def calc(self, ctx: commands.Context, *, expression: str):
-        """Calcule une expression mathématique de manière sécurisée.
+        """Securely calculate a mathematical expression.
 
-        Utilise un parseur AST au lieu de eval() pour empêcher l'exécution
-        de code arbitraire. Supporte: +, -, *, /, parenthèses, nombres décimaux.
+        Uses an AST parser instead of eval() to prevent arbitrary code execution.
+        Supports: +, -, *, /, parentheses, decimal numbers.
 
         Args:
-            ctx: Le contexte de la commande Discord.
-            expression: L'expression mathématique à évaluer (ex: '2 + 3 * 4').
+            ctx: The Discord command context.
+            expression: The mathematical expression to evaluate (e.g., '2 + 3 * 4').
         """
         try:
             result = self._safe_math_eval(expression)
@@ -555,21 +555,21 @@ class Utility(commands.Cog):
 
     @staticmethod
     def _safe_math_eval(expression: str) -> float:
-        """Évalue une expression mathématique de manière sécurisée via l'AST Python.
+        """Safely evaluate a mathematical expression using Python's AST.
 
-        Parcourt l'arbre syntaxique (AST) de l'expression et n'autorise que les
-        opérations arithmétiques de base (+, -, *, /) et les nombres littéraux.
-        Contrairement à eval(), cette méthode ne peut pas exécuter de code arbitraire.
+        Traverses the abstract syntax tree (AST) of the expression and only allows
+        basic arithmetic operations (+, -, *, /) and numeric literals. Unlike eval(),
+        this method cannot execute arbitrary code.
 
         Args:
-            expression: L'expression mathématique sous forme de chaîne.
+            expression: The mathematical expression as a string.
 
         Returns:
-            Le résultat numérique de l'expression.
+            The numeric result of the expression.
 
         Raises:
-            ValueError: Si l'expression contient des éléments non autorisés.
-            ZeroDivisionError: Si l'expression contient une division par zéro.
+            ValueError: If the expression contains disallowed elements.
+            ZeroDivisionError: If the expression contains division by zero.
         """
         import ast
         import operator

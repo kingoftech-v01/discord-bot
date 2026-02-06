@@ -1,10 +1,13 @@
 """
-Tests for the Dashboard API.
+Tests for the Dashboard API logic.
+
+These tests validate the core business logic (permission checks, data
+aggregation, filtering, validation) used by the REST API without requiring
+a running Django instance.  The Django imports are not needed because the
+tests operate on plain Python data structures and mock objects.
 """
 import pytest
 from unittest.mock import patch, MagicMock
-from django.test import TestCase, Client
-from django.contrib.auth.models import User
 
 
 class TestHealthCheck:

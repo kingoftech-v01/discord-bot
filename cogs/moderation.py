@@ -291,42 +291,37 @@ class Moderation(commands.Cog):
 
         violations = []
 
-        # Check for banned/forbidden words
         banned_word = self.automod.check_banned_words(message.content)
         if banned_word:
-            violations.append(f"Mot interdit détecté")
+            violations.append("Banned word detected")
             try:
                 await message.delete()
             except discord.Forbidden:
                 pass
 
-        # Check for rapid message spam
         if self.automod.check_spam(message.author.id, message.content):
-            violations.append("Spam détecté")
+            violations.append("Spam detected")
             try:
                 await message.delete()
             except discord.Forbidden:
                 pass
 
-        # Check for mass mention spam
         if self.automod.check_mention_spam(message.author.id, len(message.mentions)):
-            violations.append("Spam de mentions")
+            violations.append("Mention spam")
             try:
                 await message.delete()
             except discord.Forbidden:
                 pass
 
-        # Check for unauthorized Discord invite links
         if self.automod.check_invite_link(message.content):
-            violations.append("Lien d'invitation non autorisé")
+            violations.append("Unauthorized invite link")
             try:
                 await message.delete()
             except discord.Forbidden:
                 pass
 
-        # Check for excessive use of capital letters
         if self.automod.check_excessive_caps(message.content):
-            violations.append("Usage excessif de majuscules")
+            violations.append("Excessive caps usage")
 
         # Process any accumulated violations
         if violations:

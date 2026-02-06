@@ -35,12 +35,7 @@ from datetime import datetime
 from config import TOKEN, PREFIX, Colors
 from utils.database import db
 
-# ---------------------------------------------------------------------------
-# Logging configuration
-# ---------------------------------------------------------------------------
-# Logs are written both to a file (bot.log) and to the console (stderr).
-# UTF-8 encoding is used for the file handler so that non-ASCII characters
-# (e.g. guild names with special characters) are handled correctly.
+# UTF-8 encoding handles guild names with special characters correctly.
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

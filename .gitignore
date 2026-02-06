@@ -52,5 +52,12 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Testing/Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+
 # Bot specific
 bot.log

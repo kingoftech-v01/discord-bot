@@ -1,63 +1,10 @@
-"""Asynchronous SQLite database module for the Discord bot.
+"""Async SQLite database layer for bot persistence.
 
-This module provides the ``Database`` class, which is the single persistence
-layer used by every cog and service in the bot.  All SQL operations are
-executed asynchronously through the **aiosqlite** library so that database
-I/O never blocks the Discord event loop.
+Uses aiosqlite for non-blocking I/O. Each method opens its own connection
+(short-lived connection model). Use the module-level `db` singleton.
 
-Architecture overview
----------------------
-* **Backend**: SQLite 3 via ``aiosqlite`` (async wrapper around ``sqlite3``).
-* **Connection model**: short-lived connections — each public method opens its
-  own ``async with aiosqlite.connect(...)`` context.  This keeps the API
-  simple and avoids long-lived connection state at the cost of slightly higher
-  overhead per call.
-* **Singleton**: A module-level instance ``db`` is created at import time and
-  shared across the entire application.  Callers should import and use this
-  instance rather than constructing their own ``Database`` objects.
-
-Tables managed by this module
------------------------------
-+--------------------------+---------------------------------------------------+
-| Table                    | Purpose                                           |
-+==========================+===================================================+
-| ``users``                | Per-guild user profiles (XP, level, economy).     |
-+--------------------------+---------------------------------------------------+
-| ``warnings``             | Moderator-issued warnings per user/guild.         |
-+--------------------------+---------------------------------------------------+
-| ``infractions``          | Auto-mod infractions (spam, banned words, etc.).  |
-+--------------------------+---------------------------------------------------+
-| ``reaction_roles``       | Emoji-to-role mappings for reaction-role messages.|
-+--------------------------+---------------------------------------------------+
-| ``guild_config``         | Per-guild bot configuration & settings.           |
-+--------------------------+---------------------------------------------------+
-| ``tickets``              | Support ticket tracking (open / closed).          |
-+--------------------------+---------------------------------------------------+
-| ``reminders``            | Scheduled user reminders.                         |
-+--------------------------+---------------------------------------------------+
-| ``trivia_scores``        | Per-user trivia game statistics.                  |
-+--------------------------+---------------------------------------------------+
-| ``level_roles``          | Roles automatically granted at specific levels.   |
-+--------------------------+---------------------------------------------------+
-| ``banned_words``         | Multi-language profanity word list (global +      |
-|                          | per-guild), seeded with sensible defaults.        |
-+--------------------------+---------------------------------------------------+
-| ``profanity_infractions``| Log of every profanity-filter violation.          |
-+--------------------------+---------------------------------------------------+
-| ``user_profanity_stats`` | Aggregated profanity stats for progressive        |
-|                          | punishment (warn -> mute -> kick -> ban).         |
-+--------------------------+---------------------------------------------------+
-| ``profanity_config``     | Per-guild thresholds and toggles for the          |
-|                          | profanity punishment system.                      |
-+--------------------------+---------------------------------------------------+
-
-Security notes
---------------
-* ``update_guild_config()`` and ``update_profanity_config()`` accept
-  arbitrary ``**kwargs`` whose keys become SQL column names.  To prevent SQL
-  injection, each method validates the keys against a hard-coded whitelist
-  (``GUILD_CONFIG_COLUMNS`` / ``PROFANITY_CONFIG_COLUMNS``) **before**
-  constructing the query.  Unknown keys raise ``ValueError``.
+Security: update_guild_config() and update_profanity_config() validate
+column names against whitelists to prevent SQL injection.
 """
 
 import sqlite3
@@ -71,49 +18,13 @@ DATABASE_PATH = "data/bot.db"
 
 
 class Database:
-    """Asynchronous database manager for all bot persistence.
-
-    This class centralises every database operation behind a clean async API.
-    Each public method opens a short-lived ``aiosqlite`` connection, executes
-    the required queries, and closes the connection automatically via an
-    ``async with`` block.
-
-    A single module-level instance (``db``) should be used throughout the
-    application — see the bottom of this file.
-
-    Typical lifecycle::
-
-        from utils.database import db
-
-        # At bot startup (inside an async context):
-        await db.init()
-
-        # During runtime — call any data-access method:
-        user = await db.get_or_create_user(user_id, guild_id)
-
-    Attributes:
-        db_path: Filesystem path to the SQLite database file.
-    """
+    """Async database manager. Call init() once at startup."""
 
     def __init__(self, db_path: str = DATABASE_PATH):
-        """Initialise the Database wrapper.
-
-        Args:
-            db_path: Path to the SQLite database file.  Defaults to
-                ``DATABASE_PATH`` (``data/bot.db``).
-        """
         self.db_path = db_path
 
     async def init(self):
-        """Create all tables if they do not already exist.
-
-        This method **must** be called once during bot startup (before any
-        other database method is invoked).  It is safe to call multiple
-        times — every ``CREATE TABLE`` uses ``IF NOT EXISTS``.
-
-        After the schema is ready the default banned-words seed list is
-        inserted via ``_init_default_banned_words()``.
-        """
+        """Create tables and seed default banned words. Safe to call multiple times."""
         async with aiosqlite.connect(self.db_path) as db:
             # ---- users: per-guild user profiles (XP, levelling, economy) ----
             await db.execute("""
@@ -307,16 +218,7 @@ class Database:
     # ===============================
 
     async def get_user(self, user_id: int, guild_id: int) -> Optional[Dict]:
-        """Fetch a user's profile for a specific guild.
-
-        Args:
-            user_id: The Discord user ID.
-            guild_id: The Discord guild (server) ID.
-
-        Returns:
-            A dict of the user's row data, or ``None`` if the user does not
-            exist in this guild.
-        """
+        """Return user profile dict or None if not found."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -327,18 +229,7 @@ class Database:
                 return dict(row) if row else None
 
     async def create_user(self, user_id: int, guild_id: int) -> Dict:
-        """Create a new user profile with default values.
-
-        Uses ``INSERT OR IGNORE`` so it is safe to call even if the user
-        already exists — in that case the existing row is left untouched.
-
-        Args:
-            user_id: The Discord user ID.
-            guild_id: The Discord guild (server) ID.
-
-        Returns:
-            The newly created (or already existing) user profile dict.
-        """
+        """Create user with defaults. Uses INSERT OR IGNORE (idempotent)."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO users (user_id, guild_id) VALUES (?, ?)",
@@ -348,39 +239,14 @@ class Database:
         return await self.get_user(user_id, guild_id)
 
     async def get_or_create_user(self, user_id: int, guild_id: int) -> Dict:
-        """Retrieve a user's profile, creating one if it does not exist.
-
-        This is the recommended entry point for any code that needs a
-        guaranteed non-``None`` user dict.
-
-        Args:
-            user_id: The Discord user ID.
-            guild_id: The Discord guild (server) ID.
-
-        Returns:
-            The user profile dict (always non-``None``).
-        """
+        """Get user profile, creating if needed. Always returns non-None."""
         user = await self.get_user(user_id, guild_id)
         if not user:
             user = await self.create_user(user_id, guild_id)
         return user
 
     async def add_xp(self, user_id: int, guild_id: int, xp: int) -> Dict:
-        """Award XP to a user and increment their message count.
-
-        The method updates three counters atomically:
-        * ``xp`` — current-level XP (reset on level-up by the caller).
-        * ``total_xp`` — lifetime XP that is never reset.
-        * ``messages_count`` — total messages that earned XP.
-
-        Args:
-            user_id: The Discord user ID.
-            guild_id: The Discord guild (server) ID.
-            xp: The amount of XP to add (should be positive).
-
-        Returns:
-            The updated user profile dict after the XP has been applied.
-        """
+        """Add XP and increment message count. Returns updated profile."""
         user = await self.get_or_create_user(user_id, guild_id)
         new_xp = user['xp'] + xp
         new_total_xp = user['total_xp'] + xp

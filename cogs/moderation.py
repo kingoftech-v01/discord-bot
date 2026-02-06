@@ -1,20 +1,4 @@
-"""
-Advanced moderation cog with automatic moderation (auto-mod) capabilities.
-
-This module provides two main components:
-
-1. **AutoMod**: An automatic moderation engine that detects rule violations in
-   real-time, including spam detection, mention spam, banned words, excessive
-   caps usage, and unauthorized Discord invite links.
-
-2. **Moderation**: A Discord cog that integrates AutoMod with manual moderation
-   commands (ban, kick, mute, warn, purge, slowmode, lock/unlock) and provides
-   logging of all moderation actions to a configured log channel.
-
-The auto-mod system processes every non-bot, non-admin message and checks it
-against multiple violation rules. Detected violations trigger automatic message
-deletion, user warnings, and log entries.
-"""
+"""Moderation cog with auto-mod (spam, mentions, banned words, caps, invites)."""
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -32,27 +16,10 @@ from utils.database import db
 
 
 class AutoMod:
-    """Automatic moderation engine that detects various message-based rule violations.
-
-    This class maintains in-memory caches of recent messages and mentions per user
-    to detect spam patterns. It also provides static checks for banned words,
-    excessive capitalization, and Discord invite links.
-
-    The caches are time-windowed: entries older than the configured interval
-    are automatically pruned on each check call, so memory usage stays bounded.
-
-    Attributes:
-        message_cache: Per-user cache of recent messages as ``{user_id: [(timestamp, content), ...]}``.
-            Used for spam detection within the configured SPAM_INTERVAL window.
-        mention_cache: Per-user cache of recent mention timestamps as ``{user_id: [timestamps]}``.
-            Used for mention-spam detection within a 10-second sliding window.
-        caps_pattern: Compiled regex for matching uppercase letters.
-        link_pattern: Compiled regex for matching HTTP/HTTPS URLs.
-        invite_pattern: Compiled regex for matching Discord invite links
-            (both discord.gg and discordapp.com/invite formats).
-    """
+    """Real-time rule violation detector with sliding-window spam detection."""
 
     def __init__(self):
+        # FIXME: These caches grow unbounded for active users - consider periodic cleanup
         self.message_cache = defaultdict(list)  # {user_id: [(timestamp, content), ...]}
         self.mention_cache = defaultdict(list)  # {user_id: [timestamps]}
         self.caps_pattern = re.compile(r'[A-Z]')
@@ -60,23 +27,8 @@ class AutoMod:
         self.invite_pattern = re.compile(r'discord(?:\.gg|app\.com/invite)/[\w-]+')
 
     def check_spam(self, user_id: int, content: str) -> bool:
-        """Check whether a user is sending messages too rapidly (spamming).
-
-        Maintains a sliding time window of recent messages per user. Messages
-        older than SPAM_INTERVAL seconds are pruned, then the new message is
-        appended. If the total count meets or exceeds SPAM_THRESHOLD, the user
-        is considered to be spamming.
-
-        Args:
-            user_id: The Discord user ID to check.
-            content: The message content (stored in cache for potential future use).
-
-        Returns:
-            True if the user's message count within the spam interval meets or
-            exceeds the spam threshold, False otherwise.
-        """
+        """Return True if user sent >= SPAM_THRESHOLD msgs within SPAM_INTERVAL."""
         now = datetime.now()
-        # Prune messages that have aged out of the sliding time window
         self.message_cache[user_id] = [
             (ts, msg) for ts, msg in self.message_cache[user_id]
             if (now - ts).total_seconds() < SPAM_INTERVAL
@@ -85,23 +37,8 @@ class AutoMod:
         return len(self.message_cache[user_id]) >= SPAM_THRESHOLD
 
     def check_mention_spam(self, user_id: int, mention_count: int) -> bool:
-        """Check whether a user is spamming mentions (mass-pinging).
-
-        Uses a 10-second sliding window. If a single message contains fewer
-        than 5 mentions, it is ignored entirely. Otherwise, each mention is
-        recorded as a separate timestamp entry. If the user accumulates 10 or
-        more mention events within the 10-second window, it is flagged as
-        mention spam.
-
-        Args:
-            user_id: The Discord user ID to check.
-            mention_count: The number of user mentions in the current message.
-
-        Returns:
-            True if the user has 10 or more mentions within the last 10 seconds,
-            False otherwise.
-        """
-        # Ignore messages with fewer than 5 mentions (not suspicious enough)
+        """Return True if user mentioned >= 10 users within 10 seconds."""
+        # Ignore messages with fewer than 5 mentions (not suspicious)
         if mention_count < 5:
             return False
         now = datetime.now()
@@ -116,18 +53,7 @@ class AutoMod:
         return len(self.mention_cache[user_id]) >= 10
 
     def check_banned_words(self, content: str) -> Optional[str]:
-        """Check whether the message contains any banned words.
-
-        Performs a case-insensitive substring match against each word in the
-        BANNED_WORDS list from the bot configuration.
-
-        Args:
-            content: The message content to scan.
-
-        Returns:
-            The first banned word found in the content, or None if no
-            banned words are detected.
-        """
+        """Return first matching banned word or None."""
         content_lower = content.lower()
         for word in BANNED_WORDS:
             if word.lower() in content_lower:
@@ -135,21 +61,7 @@ class AutoMod:
         return None
 
     def check_excessive_caps(self, content: str, threshold: float = 0.7) -> bool:
-        """Check whether the message uses an excessive proportion of uppercase letters.
-
-        Messages shorter than 10 characters are exempt from this check to avoid
-        false positives on short messages like "OK" or "LOL".
-
-        Args:
-            content: The message content to analyze.
-            threshold: The minimum ratio of uppercase letters to total letters
-                that triggers a violation. Defaults to 0.7 (70%).
-
-        Returns:
-            True if the uppercase ratio meets or exceeds the threshold,
-            False otherwise (including for short or non-alphabetic messages).
-        """
-        # Short messages are exempt to avoid false positives
+        """Return True if >70% of letters are uppercase (min 10 chars)."""
         if len(content) < 10:
             return False
         letters = [c for c in content if c.isalpha()]
@@ -159,16 +71,7 @@ class AutoMod:
         return caps_ratio >= threshold
 
     def check_invite_link(self, content: str) -> bool:
-        """Check whether the message contains a Discord invite link.
-
-        Matches both ``discord.gg/xxx`` and ``discordapp.com/invite/xxx`` formats.
-
-        Args:
-            content: The message content to scan.
-
-        Returns:
-            True if a Discord invite link is found, False otherwise.
-        """
+        """Return True if content contains discord.gg or discordapp.com/invite link."""
         return bool(self.invite_pattern.search(content))
 
 

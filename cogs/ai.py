@@ -1,24 +1,6 @@
-"""
-AI chatbot integration cog for the Discord bot.
+"""AI chatbot cog with OpenAI API integration and conversation memory.
 
-Provides conversational AI capabilities powered by the OpenAI API (or any
-compatible endpoint such as OpenRouter or Together AI). Includes a per-user,
-per-channel conversation history manager that maintains context across
-multiple exchanges within the same session.
-
-When the primary OpenAI API is unavailable or unconfigured, the cog falls
-back to a free Hugging Face DialoGPT inference endpoint.
-
-Features:
-- ``ask`` -- General-purpose Q&A with conversation memory.
-- ``imagine`` -- DALL-E 3 image generation from a text prompt.
-- ``translate`` -- AI-powered text translation to a target language.
-- ``summarize`` -- Condense long text into key bullet points.
-- ``explain`` -- ELI5-style explanation of any concept.
-- ``code`` -- Generate code snippets in a specified programming language.
-- ``clearai`` -- Clear your conversation history.
-- ``aichannel`` -- Designate channels where the bot auto-responds to every
-  message (admin only).
+Falls back to free Hugging Face DialoGPT when OpenAI is unavailable.
 """
 import discord
 from discord.ext import commands
@@ -34,85 +16,32 @@ from utils.database import db
 
 
 class ConversationManager:
-    """In-memory conversation history manager for AI interactions.
-
-    Maintains a dictionary of message histories keyed by a composite
-    ``user_id + channel_id`` string, allowing separate conversation contexts
-    per user per channel. Automatically truncates old messages when the
-    history exceeds the configured maximum to control token usage.
-
-    Attributes:
-        conversations: Mapping of composite keys to lists of message dicts
-            (each with ``role`` and ``content`` fields).
-        max_history: Maximum number of exchange *pairs* to retain. The actual
-            stored message count cap is ``max_history * 2`` (user + assistant).
-    """
+    """Per-user, per-channel conversation history with auto-truncation."""
 
     def __init__(self, max_history: int = 10):
-        """Initialize the conversation manager.
-
-        Args:
-            max_history: Maximum number of exchange pairs to keep per
-                user-channel combination. Defaults to 10.
-        """
         self.conversations: Dict[str, List[Dict]] = {}
-        self.max_history = max_history
+        self.max_history = max_history  # Exchange pairs, not messages
 
     def get_key(self, user_id: int, channel_id: int) -> str:
-        """Build a composite dictionary key from user and channel IDs.
-
-        Args:
-            user_id: The Discord user's snowflake ID.
-            channel_id: The Discord channel's snowflake ID.
-
-        Returns:
-            A string key in the format ``"<user_id>_<channel_id>"``.
-        """
         return f"{user_id}_{channel_id}"
 
     def add_message(self, user_id: int, channel_id: int, role: str, content: str):
-        """Append a message to the conversation history for a user/channel pair.
-
-        If the history exceeds ``max_history * 2`` messages after insertion,
-        the oldest messages are trimmed to stay within the limit.
-
-        Args:
-            user_id: The Discord user's snowflake ID.
-            channel_id: The Discord channel's snowflake ID.
-            role: The message role (``"user"``, ``"assistant"``, or ``"system"``).
-            content: The message text content.
-        """
+        """Add message and truncate to max_history * 2 (user + assistant pairs)."""
         key = self.get_key(user_id, channel_id)
         if key not in self.conversations:
             self.conversations[key] = []
 
         self.conversations[key].append({"role": role, "content": content})
 
-        # Keep only the most recent messages to limit token usage
+        # Limit token usage by keeping only recent exchanges
         if len(self.conversations[key]) > self.max_history * 2:
             self.conversations[key] = self.conversations[key][-self.max_history * 2:]
 
     def get_history(self, user_id: int, channel_id: int) -> List[Dict]:
-        """Retrieve the conversation history for a user/channel pair.
-
-        Args:
-            user_id: The Discord user's snowflake ID.
-            channel_id: The Discord channel's snowflake ID.
-
-        Returns:
-            A list of message dicts (``role`` and ``content``), or an empty
-            list if no history exists.
-        """
         key = self.get_key(user_id, channel_id)
         return self.conversations.get(key, [])
 
     def clear(self, user_id: int, channel_id: int):
-        """Delete the entire conversation history for a user/channel pair.
-
-        Args:
-            user_id: The Discord user's snowflake ID.
-            channel_id: The Discord channel's snowflake ID.
-        """
         key = self.get_key(user_id, channel_id)
         if key in self.conversations:
             del self.conversations[key]

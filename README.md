@@ -58,11 +58,17 @@ Un bot Discord complet et professionnel avec des fonctionnalités avancées pour
 - Calculatrice, ping, avatar
 - Commandes: `!poll`, `!multipoll`, `!remind`, `!afk`, `!meme`, `!serverinfo`, `!userinfo`, `!avatar`, `!calc`, `!ping`
 
+### Chatbot AI
+- Intégration OpenAI (`cogs/ai.py`) avec support d'alternatives gratuites
+- Conversations contextuelles par utilisateur / salon avec historique configurable
+- Activation par variable d'environnement (`AI_ENABLED`) et modèle configurable (`AI_MODEL`)
+
 ### Configuration
 - Préfixe personnalisable par serveur
 - Activation/désactivation des modules
 - Channels de logs configurables
 - Messages personnalisables
+- Commandes hybrides (prefix `!` **et** slash `/`) via `commands.hybrid_group`
 - Commandes: `!config`, `!help`, `!botinfo`, `!invite`
 
 ## Installation
@@ -139,23 +145,26 @@ Activez ces intents dans le Discord Developer Portal:
 
 ```
 discord-bot/
-├── main.py              # Point d'entrée principal
-├── config.py            # Configuration centralisée
-├── requirements.txt     # Dépendances Python
-├── .env.example         # Template de configuration
-├── .gitignore           # Fichiers à ignorer
-├── cogs/                # Modules du bot
-│   ├── admin.py         # Administration
-│   ├── games.py         # Jeux et économie
-│   ├── leveling.py      # Système de leveling
-│   ├── moderation.py    # Modération
-│   ├── reaction_roles.py# Reaction roles
-│   ├── tickets.py       # Système de tickets
-│   ├── utility.py       # Utilitaires
-│   └── welcome.py       # Bienvenue/départ
-├── utils/               # Utilitaires
-│   └── database.py      # Gestion SQLite
-└── data/                # Données (base de données)
+├── main.py                # Point d'entrée principal (classe DiscordBot, logging, chargement des cogs)
+├── config.py              # Configuration centralisée (tokens, couleurs, emojis, modèle IA)
+├── requirements.txt       # Dépendances Python
+├── .env.example           # Template de configuration
+├── .gitignore
+├── cogs/                  # 11 modules (cogs) chargés au demarrage
+│   ├── admin.py           # Administration + configuration (commandes hybrides)
+│   ├── ai.py              # Chatbot AI (OpenAI / alternatives)
+│   ├── games.py           # Jeux et économie (dés, slot, trivia, etc.)
+│   ├── leveling.py        # Système XP / leveling / rôles de récompense
+│   ├── moderation.py      # Ban, kick, mute, warn, purge, lock, slowmode
+│   ├── profanity_filter.py# Auto-modération mots interdits
+│   ├── reaction_roles.py  # Attribution automatique de rôles via réactions
+│   ├── scheduler.py       # Tâches planifiées (APScheduler)
+│   ├── tickets.py         # Panel de tickets + transcripts
+│   ├── utility.py         # Sondages, rappels, AFK, memes, infos
+│   └── welcome.py         # Messages de bienvenue / départ + DM
+├── utils/
+│   └── database.py        # Gestion base de données (aiosqlite)
+└── data/                  # Stockage SQLite (genere au premier demarrage)
 ```
 
 ## Commandes principales
